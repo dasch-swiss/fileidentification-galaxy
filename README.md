@@ -26,8 +26,11 @@ LibreOffice https://www.libreoffice.org/download/download-libreoffice/<br>
 
 it is not optimised on speed, especially when converting files. the idea was to write a script that has some default file conversion but is at the same time highly customisable.<br>
 <br>
-the script turns the output from siegfried into a SfInfo dataclass instance per file, looks up the policies defined in **conf/policies.py**
-and writes out a default **policies.json**. in a second iteration, it applies the policies 
+the script reads the output from siegfried, 
+gives you an overview about the fileformats encountered and looks up the policies defined in **policies/policies.py**
+and writes out a default **policies.json**.
+<br><br>
+in a second iteration, it applies the policies,
 probes the file - if it is corrupt - if file format is accepted or it need to be converted).
 then it converts the files flagged for conversion, verifies their output.
 
@@ -73,7 +76,7 @@ uv run identify.py --help
 uv run identify.py path/to/directory
 ```
 
-this does generate a default policies file according to the settings in conf/policies.py<br>
+this does generate a default policies file according to the settings in policies/policies.py<br>
 you get:<br>
 **path/to/directory_policies.json**  -> the policies for that folder<br>
 **path/to/directory_log.json** -> the technical metadata of all the files in the folder<br><br>
@@ -131,15 +134,9 @@ which does all at once.
 the **path/to/directory_log.json** takes track of all modifications and appends logs of what changed in the folder.
 <br>e.g.: if a file got removed from the folder, in the log.json of that folder the respective SfInfo object of that file gets an 
 entry **"status": {"removed": true}**, so it documented that this file was once in the folder, but not anymore. 
-its kind of a simple database.<br><br>
+<br><br>
 if you wish a simpler csv output, you can add the flag **--csv** anytime when you run the script, which converts the log.json
-of the actual status of the directory to a csv. as an addition, you get also a mapping file (if you need to replace the paths of converted files somewhere else)<br><br>
-**moving the directory**<br>
-as long as you keep the files **directory_log.json** and **directory_log.json.sha256** (needed to verify the log) on the same
-**path/to/** as the **directory**, you can move the directory anywhere between the steps.<br>
-(optional the **directory_policies.json** if its specific. otherwise a new one gets created)<br><br>
-you should not move the WORKINGDIR between applying the policies (-a) and removing tmp files (-r) though.
-
+of the actual status of the directory to a csv.
 
 ### advanced usage
 
@@ -215,29 +212,6 @@ uv run identify.py path/to/directory -tf fmt/XXX
 
 the test conversions are located in _WORKINGDIR/_TEST
 
-### presets
-
-once you've done your work on a customised polices, you might want to save it as a preset 
-(given the path of the policies is path/to/directory_policies.json )
-
-```
-uv run identify.py path/to/directory -S
-```
-
-you can reuse it on another folder with the flag -p:
-
-```
-uv run identify.py path/to/directory -p presets/yourSavedPoliciesName
-```
-
-if you're not sure what files to expect in that folder and you mind skipping them during processing, 
-you can add the flag -e which expands the policies with blank ones that are not yet in the policies and writes a 
-new file path/to/directory_policies.json which you can adjust before applying them.
-
-```
-uv run identify.py path/to/directory -ep presets/yourSavedPoliciesName
-```
-
 ### default settings
 
 the default setting for file conversion are in **conf/policies.py**, you can add or modify the entries there. all other
@@ -270,8 +244,6 @@ when used in generating policies, it does not add blank ones for formats that ar
 [--blank] creates a blank policies based on the files encountered in the given directory<br><br>
 **-e**<br>
 [--extend-policies] append filetypes found in the directory to the given policies if they are missing in it.<br><br>
-**-S**<br>
-[--save-policies] save the policies in presets<br><br>
 **-q**<br>
 [--quiet] just print errors and warnings<br><br>
 **--csv**<br>
