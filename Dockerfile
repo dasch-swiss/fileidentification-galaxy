@@ -8,7 +8,6 @@ ENV TZ=UTC
 RUN apt-get update && apt-get install -y \
     # Basic utilities
     curl \
-    wget \
     ca-certificates \
     # Media processing tools
     ffmpeg \
@@ -22,11 +21,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Siegfried
-RUN wget -qO - https://keybase.io/richardlehane/pgp_keys.asc | apt-key add - \
-    && echo 'deb https://github.com/richardlehane/siegfried/releases/download/v1.10.0/ ./' | tee /etc/apt/sources.list.d/siegfried.list \
-    && apt-get update \
-    && apt-get install -y siegfried \
-    && rm -rf /var/lib/apt/lists/*
+RUN curl -L https://github.com/richardlehane/siegfried/releases/latest/download/siegfried_1.11.2_linux_amd64.deb -o siegfried.deb \
+    && dpkg -i siegfried.deb \
+    && rm siegfried.deb \
+    && sf -update
+
 
 # Install UV package manager
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
