@@ -43,8 +43,5 @@ RUN useradd -m -u 1000 fileident && \
 
 USER fileident
 
-# Expose any necessary ports (if the app serves HTTP, adjust as needed)
-# EXPOSE 8000
-
 # Default command
 CMD ["uv", "run", "identify.py", "--help"]
