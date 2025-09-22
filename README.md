@@ -339,3 +339,27 @@ if you want to convert to pdf/A, you need LibreOffice version 7.4+
 when you convert svg, you might run into errors as the default library of imagemagick is not that good.
 easiest workaround is installing inkscape ( `brew install --cask inkscape` ), make sure that you reinstall imagemagick,
 so its uses inkscape as default for converting svg ( `brew remove imagemagick` , `brew install imagemagick`)
+
+## Dedicated Dockerfile for Galaxy integration
+
+```bash
+docker build -f Dockerfile.galaxy -t fileidentification-galaxy .
+```
+
+First, get an overview, incl. duplicates and format identification:
+
+```bash
+data=path/to/data
+docker run -v "${data}:/data" fileidentification-galaxy /data
+```
+
+Then, so some file integrity tests:
+
+```bash
+data=path/to/data
+docker run -v "${data}:/data" fileidentification-galaxy /data -i
+```
+
+TODO: We need a mechanism to save the state (e.g. policies) between runs.
+Because first the policies are created, and then they are used with `-i`.
+Running `-i` directly is not okay.
