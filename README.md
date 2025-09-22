@@ -331,9 +331,6 @@ Preservation recommendations
 [bundesarchiv](https://www.bar.admin.ch/dam/bar/de/dokumente/konzepte_und_weisungen/archivtaugliche_dateiformate.1.pdf.download.pdf/archivtaugliche_dateiformate.pdf)
 
 **NOTE**
-
-
-
 if you want to convert to pdf/A, you need LibreOffice version 7.4+
 
 when you convert svg, you might run into errors as the default library of imagemagick is not that good.
