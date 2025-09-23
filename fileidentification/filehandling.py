@@ -559,8 +559,8 @@ class FileHandler:
 
     def write_logs(self, root_folder: Path | str, to_csv: bool = False) -> None:
         logoutput = LogOutput(files=self.stack, errors=self.log_tables.dump_errors())
-        with open(Path(f"{root_folder}{JsonOutput.LOG}"), "w") as f:
-            f.write(logoutput.model_dump_json(indent=4, by_alias=True, exclude_none=True))
+        output_str = logoutput.model_dump_json(indent=4, by_alias=True, exclude_none=True)
+        (Path(root_folder) / JsonOutput.LOG.value).write_text(output_str)
 
         if self.mode.VERBOSE:
             print_processing_errors(log_tables=self.log_tables)

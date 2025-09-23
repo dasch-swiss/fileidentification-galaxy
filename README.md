@@ -356,7 +356,3 @@ Then, do some file integrity tests:
 data=testdata
 docker run --rm --name fileidentification-galaxy -v "${data}:/data" fileidentification-galaxy /data -i
 ```
-
-TODO: We need a mechanism to save the state (e.g. policies) between runs.
-Because first the policies are created, and then they are used with `-i`.
-Running `-i` directly is not okay.
