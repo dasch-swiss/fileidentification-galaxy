@@ -22,7 +22,9 @@ RUN uv sync
 
 # Create a non-root user for running the application
 RUN useradd -m -u 1000 fileident && \
-    chown -R fileident:fileident /app
+    chown -R fileident:fileident /app && \
+    mkdir -p /data && \
+    chown fileident:fileident /data
 USER fileident
 
 # Binary which will be executed (NOT customizable when running the container)

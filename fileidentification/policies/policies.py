@@ -28,7 +28,7 @@ def generate_policies(
     loaded_pol: dict[str, PolicyParams] | None = None,
 ) -> dict[str, Any]:
     policies: dict[str, Any] = {}
-    jsonfile = f"{outpath}{JsonOutput.POLICIES}"
+    jsonfile = outpath / JsonOutput.POLICIES
 
     # blank caveat
     if blank:
