@@ -346,15 +346,15 @@ docker build -f Dockerfile.galaxy -t fileidentification-galaxy .
 First, get an overview, incl. duplicates and format identification:
 
 ```bash
-data=path/to/data
-docker run -v "${data}:/data" fileidentification-galaxy /data
+data=testdata
+docker run --rm --name fileidentification-galaxy -v "${data}:/data" fileidentification-galaxy /data
 ```
 
 Then, do some file integrity tests:
 
 ```bash
-data=path/to/data
-docker run -v "${data}:/data" fileidentification-galaxy /data -i
+data=testdata
+docker run --rm --name fileidentification-galaxy -v "${data}:/data" fileidentification-galaxy /data -i
 ```
 
 TODO: We need a mechanism to save the state (e.g. policies) between runs.
