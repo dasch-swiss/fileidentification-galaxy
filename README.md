@@ -350,7 +350,7 @@ data=path/to/data
 docker run -v "${data}:/data" fileidentification-galaxy /data
 ```
 
-Then, so some file integrity tests:
+Then, do some file integrity tests:
 
 ```bash
 data=path/to/data
