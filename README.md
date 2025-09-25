@@ -343,7 +343,13 @@ so its uses inkscape as default for converting svg ( `brew remove imagemagick` ,
 docker build -f Dockerfile.galaxy -t fileidentification-galaxy .
 ```
 
-First, get an overview, incl. duplicates and format identification:
+Spin up Galaxy, to run the tool:
+
+```bash
+planemo serve
+```
+
+Run the tests:
 
 ```bash
 planemo test fileidentification-galaxy.xml
