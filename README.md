@@ -346,13 +346,6 @@ docker build -f Dockerfile.galaxy -t fileidentification-galaxy .
 First, get an overview, incl. duplicates and format identification:
 
 ```bash
-data=testdata
-docker run --rm --name fileidentification-galaxy -v "${data}:/data" fileidentification-galaxy /data
+planemo test fileidentification-galaxy.xml
 ```
 
-Then, do some file integrity tests:
-
-```bash
-data=testdata
-docker run --rm --name fileidentification-galaxy -v "${data}:/data" fileidentification-galaxy /data -i
-```

@@ -26,9 +26,3 @@ RUN useradd -m -u 1000 fileident && \
     mkdir -p /data && \
     chown fileident:fileident /data
 USER fileident
-
-# Binary which will be executed (NOT customizable when running the container)
-ENTRYPOINT ["uv", "run", "identify.py"]
-
-# Parameters (can be overridden when running the container, with `docker run <image> args...`)
-CMD ["--help"]
