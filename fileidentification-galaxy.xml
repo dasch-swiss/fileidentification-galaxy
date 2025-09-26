@@ -1,7 +1,7 @@
 <tool id="fileidentification" name="Analyse your files" version="0.1.0" python_template_version="3.5">
     <requirements>
         <container type="docker">
-            docker://fileidentification-galaxy:latest
+            fileidentification-galaxy:latest
         </container>
     </requirements> 
     <command detect_errors="exit_code"><![CDATA[
