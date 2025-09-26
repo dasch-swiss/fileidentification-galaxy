@@ -4,6 +4,9 @@
             fileidentification-galaxy:latest
         </container>
     </requirements> 
+    <!---echo "pwd" && pwd && \
+        echo "ls -l ." && ls -l . && \
+        echo "ls -l .." && ls -l .. && \ -->
     <command detect_errors="exit_code"><![CDATA[
         unzip $input1 -d input_dir &&
         uv run identify.py ./input_dir > results.txt
