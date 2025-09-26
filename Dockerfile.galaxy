@@ -1,9 +1,12 @@
-FROM python:3.13-slim-trixie
+FROM python:3.13-trixie
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Set environment variables to prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
+
+# Configure uv to use container-internal cache
+ENV UV_CACHE_DIR=/app/.uv-cache
 
 # Update package lists and install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -19,10 +22,3 @@ RUN apt-get update && apt-get install -y \
 COPY . /app/
 WORKDIR /app
 RUN uv sync
-
-# Create a non-root user for running the application
-RUN useradd -m -u 1000 fileident && \
-    chown -R fileident:fileident /app && \
-    mkdir -p /data && \
-    chown fileident:fileident /data
-USER fileident
