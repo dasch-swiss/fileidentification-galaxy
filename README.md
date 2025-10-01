@@ -352,7 +352,8 @@ planemo serve
 Run the tests:
 
 ```bash
-planemo test --biocontainers fileidentification-galaxy.xml
+planemo test --biocontainers --update_test_data fileidentification-galaxy.xml
 ```
 
-Before running the tests, make sure that Docker Desktop for Mac allows bind mounting of `/private/var` and `/var`.
+- Before running the tests, make sure that Docker Desktop for Mac allows bind mounting of `/private/var` and `/var`.
+- Do not use `\` for line continuation inside the CDATA block of `<command>`
