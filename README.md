@@ -338,11 +338,10 @@ when you convert svg, you might run into errors as the default library of imagem
 easiest workaround is installing inkscape ( `brew install --cask inkscape` ), make sure that you reinstall imagemagick,
 so its uses inkscape as default for converting svg ( `brew remove imagemagick` , `brew install imagemagick`)
 
-## Dedicated Dockerfile for Galaxy integration
+## Dedicated Docker Image for Galaxy Integration
 
-```bash
-docker build -f Dockerfile.galaxy -t fileidentification-galaxy .
-```
+Every push to the main branch triggers a rebuild using `Dockerfile.galaxy`,
+and uploads it to [Docker Hub](https://hub.docker.com/r/daschswiss/fileidentification-galaxy).
 
 Spin up Galaxy, to run the tool:
 
@@ -353,6 +352,7 @@ planemo serve
 Run the tests:
 
 ```bash
-planemo test fileidentification-galaxy.xml
+planemo test --biocontainers fileidentification-galaxy.xml
 ```
 
+Before running the tests, make sure that Docker Desktop for Mac allows bind mounting of `/private/var` and `/var`.
