@@ -9,11 +9,8 @@
             daschswiss/fileidentification-galaxy:latest
         </container>
     </requirements>
-    <!-- 
-    echo "% ls -l ../_working"; ls -l ../_working; echo; echo "% ls -l ../inputs"; ls -l ../inputs; echo; echo "% ls -l ../outputs"; ls -l ../outputs; echo; echo "% ls -l ../tmp"; ls -l ../tmp; echo; echo "% ls -l ../working"; ls -l ../working; echo; echo "% unzip..."; unzip $input1 -d input_dir; echo; echo "% uv run..."; uv run identify.py ./input_dir > results.txt
-    -->
     <command detect_errors="exit_code"><![CDATA[
-        cd /app && uv run identify.py ./input_dir > results.txt
+        cd /app && unzip $input1 -d input_dir && uv run identify.py ./input_dir > results.txt
     ]]></command>
     <inputs>
         <param type="data" name="input1" format="zip" />
