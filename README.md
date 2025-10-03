@@ -357,3 +357,6 @@ planemo test --biocontainers --update_test_data fileidentification-galaxy.xml
 
 - Before running the tests, make sure that Docker Desktop for Mac allows bind mounting of `/private/var` and `/var`.
 - Do not use `\` for line continuation inside the CDATA block of `<command>`
+- Our app is installed in `/app`, because that's how it was specified in the Dockerfile.
+  The commands inside the `<command>` Block of the XML file should reference the entire path to `/app/<script.py>`.
+- Only the cwd is writable, all other dirs are read-only: the input dir, `/app`, ...
