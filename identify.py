@@ -1,26 +1,19 @@
 from pathlib import Path
+from typing import Annotated
 
 import typer
-from typing_extensions import Annotated
 
 from fileidentification.filehandling import FileHandler
 
 
 def main(
     root_folder: Annotated[Path, typer.Argument(help="path to the directory or file")],
-    tmp_dir: Annotated[
-        Path | None,
-        typer.Option(
-            "--tmp-dir",
-            help="path to tmp dir where the converted / removed files are stored",
-        ),
-    ] = None,
-    integrity_tests: Annotated[
+    inspect: Annotated[
         bool,
         typer.Option(
-            "--integrity-tests",
+            "--inspect",
             "-i",
-            help="do integrity tests on the files in the selected folder",
+            help="probing the files in the selected folder",
         ),
     ] = False,
     apply: Annotated[
@@ -105,8 +98,7 @@ def main(
     fh = FileHandler()
     fh.run(
         root_folder=root_folder,
-        tmp_dir=tmp_dir,
-        integrity_tests=integrity_tests,
+        inspect=inspect,
         apply=apply,
         convert=convert,
         remove_tmp=remove_tmp,
