@@ -19,3 +19,6 @@ presets/
 
 #
 loosePartsTesting.py
+
+tool_test_output.json
+tool_test_output.html
