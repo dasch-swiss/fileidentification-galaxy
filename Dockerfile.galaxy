@@ -1,4 +1,4 @@
-FROM python:3.13-trixie
+FROM python:3.13-slim-trixie
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Set environment variables to prevent interactive prompts
@@ -21,4 +21,4 @@ RUN apt-get update && apt-get install -y \
 # Install python dependencies
 COPY . /app/
 WORKDIR /app
-RUN uv sync
+RUN uv export | uv pip install --system -r -

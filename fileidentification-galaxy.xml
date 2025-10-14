@@ -1,12 +1,12 @@
 <tool id="fileidentification" name="Analyse your files" version="0.1.0" python_template_version="3.5">
     <requirements>
         <container type="docker">
-            docker.io/daschswiss/fileidentification-galaxy:latest
+            daschswiss/fileidentification-galaxy:without-uv
         </container>
     </requirements>
     <command detect_errors="exit_code"><![CDATA[
 unzip $input1 -d input_dir &&
-uv run /app/identify.py ./input_dir > results.txt
+python3 /app/identify.py ./input_dir > results.txt
     ]]></command>
     <inputs>
         <param type="data" name="input1" format="zip"/>

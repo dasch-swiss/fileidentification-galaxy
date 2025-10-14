@@ -1,4 +1,5 @@
 from enum import StrEnum
+from pathlib import Path
 
 
 # application settings
@@ -9,7 +10,7 @@ class DroidSigURL(StrEnum):
     cdnNA = "https://cdn.nationalarchives.gov.uk/documents/DROID_SignatureFile_"
 
 
-FMT2EXT = "fileidentification/definitions/fmt2ext.json"
+FMT2EXT = str(Path(__file__).parent / "fmt2ext.json")
 
 
 class Bin(StrEnum):
