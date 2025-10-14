@@ -40,10 +40,7 @@ load_dotenv()
 
 
 class FileHandler:
-    """
-    It can create, verify and apply policies, test the integrity of the files and convert them (with FileConverter) and
-    move and remove tmp files.
-    """
+    """Main class. It can create, verify and apply policies, test the files on errors, convert and move them."""
 
     def __init__(self) -> None:
         self.mode: Mode = Mode()
