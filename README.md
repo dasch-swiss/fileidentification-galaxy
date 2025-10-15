@@ -338,9 +338,9 @@ when you convert svg, you might run into errors as the default library of imagem
 easiest workaround is installing inkscape ( `brew install --cask inkscape` ), make sure that you reinstall imagemagick,
 so its uses inkscape as default for converting svg ( `brew remove imagemagick` , `brew install imagemagick`)
 
-## Dedicated Docker Image for Galaxy Integration
+## Galaxy Integration
 
-Every push to the main branch triggers a rebuild using `Dockerfile.galaxy`,
+Every push to the main branch triggers a rebuild of the Docker image,
 and uploads it to [Docker Hub](https://hub.docker.com/r/daschswiss/fileidentification-galaxy).
 
 Spin up Galaxy, to run the tool:
@@ -355,8 +355,13 @@ Run the tests:
 planemo test --biocontainers fileidentification-galaxy.xml
 ```
 
+Keep in mind:
+
 - Before running the tests, make sure that Docker Desktop for Mac allows bind mounting of `/private/var` and `/var`.
-- Do not use `\` for line continuation inside the CDATA block of `<command>`
-- Our app is installed in `/app`, because that's how it was specified in the Dockerfile.
-  The commands inside the `<command>` Block of the XML file should reference the entire path to `/app/<script.py>`.
-- Only the cwd is writable, all other dirs are read-only: the input dir, `/app`, ...
+- Do not use `\` for line continuation inside the CDATA block of `<command>`.
+- Do not indent new lines inside the CDATA block of `<command>`.
+- Inside the Docker container, the app is installed in `/app`, which is read-only in Galaxy.
+- The commands inside the `<command>` block of the XML file are executed in a dedicated user directory defined by Galaxy - 
+  not in the `WORKDIR` specified in the Dockerfile.
+- Only the user directory is writable, all other dirs are read-only: the input dir, `/app`, ...
+- Commands inside the `<command>` block should reference the entire path to `/app/<script.py>`.
