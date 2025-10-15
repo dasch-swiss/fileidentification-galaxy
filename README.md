@@ -1,27 +1,77 @@
 # Fileidentification
 
-A python CLI to identify file formats and bulk convert files. It is designed for digital preservation workflows
-and is basically a python wrapper around several programs. It uses [pygfried](https://pypi.org/project/pygfried/)
-(a CPython extension for [siegfried](https://www.itforarchivists.com/siegfried)), ffmpeg, imagemagick (optionally inkscape) and
-LibreOffice, so it's recommended to have those installed. If you are not using fileidentification a lot and don't want
-to install these programs, you can run the script in a docker container. There is a dockerfile ready, the current docker
-image is still heavy though.
+A python CLI to identify file formats and bulk convert files.
+It is designed for digital preservation workflows and is basically a python wrapper around several programs.
+It uses [pygfried](https://pypi.org/project/pygfried/)
+(a CPython extension for [siegfried](https://www.itforarchivists.com/siegfried)),
+ffmpeg, imagemagick (optionally inkscape) and LibreOffice, so it's recommended to have those installed.
+If you are not using fileidentification a lot and don't want to install these programs,
+you can run the script in a docker container.
+There is a dockerfile ready, the current docker image is still heavy though (1.1 G).
 
-Most probable use case might be when you need to test and possibly convert a huge amount of files and you
-don't know in advance what file types you are dealing with. It features:
+Most probable use case might be when you need to test and possibly convert a huge amount of files
+and you don't know in advance what file types you are dealing with.
+It features:
 
 - file format identification and extraction of technical metadata with pygfried, ffprobe and imagemagick
-- file integrity testing with ffmpeg and imagemagick
-- file conversion with ffmpeg, imagemagick and LibreOffice using a json file as a protocol
+- file probing with ffmpeg and imagemagick
+- file conversion with ffmpeg, imagemagick and LibreOffice using a JSON file as a protocol
 - detailed logging
+
 
 ## Installation
 
-### Recommended Programs
+### Docker-based
 
-Install ffmpeg, imagemagick and LibreOffice if not already installed, or alternatively use a docker image.
+Build the image, make the bash script executable,
+and link it to a bin directory that appears in PATH (e.g. $HOME/.local/bin):
 
-#### MacOS (using homebrew)
+```bash
+docker build -t fileidentification .
+chmod +x ./fidr.sh
+ln -s `pwd`/fidr.sh $HOME/.local/bin/fidr
+```
+
+#### Quickstart for Docker-based Installation
+
+- **Generate policies for your files:**
+
+    `fidr path/to/directory`
+
+  - **Review generated policies:**
+
+      Edit `path/to/directory_policies.json` to customize conversion rules.
+      Optionally, test the outcome of the edited policies:
+
+      `fidr path/to/directory -t`
+
+- **Test the files on errors and apply the policies:**
+
+    `fidr path/to/directory -iar`
+
+- **Logfile**: see `path/to/directory_log.json`
+
+    If you wish a simpler CSV output, run `fidr path/to/directory --csv` to get a CSV.
+
+A more complex example: The following command will:
+
+- load an external policies JSON
+- expand it only with file types defined in the default policies (strict mode)
+- probe the files in verbose mode
+- apply the policies (in strict mode, i.e. remove the files whose file type is not listed in the generated policies)
+- remove temporary files and get a simpler CSV output:
+
+`fidr path/to/directory -esivar -p path/to/external_policies.json --csv`
+
+The first argument has to be the root folder of your files to process, otherwise combine flags / arguments as you wish.
+See **Options** below for more available flags.
+
+
+### Manual Installation on Your System
+
+Install ffmpeg, imagemagick and LibreOffice, if not already installed:
+
+#### MacOS (using Homebrew)
 
 ```bash
 brew install ffmpeg
@@ -38,14 +88,14 @@ Depending on your distribution:
 - [imagemagick](https://imagemagick.org/script/download.php#linux)
 - [LibreOffice](https://www.libreoffice.org/download/download-libreoffice)
 
-On Debian/Ubuntu
+On Debian/Ubuntu:
 
 ```bash
 sudo apt-get update
 sudo apt-get install ffmpeg imagemagick ghostscript libreoffice
 ```
 
-### Python Dependencies
+#### Python Dependencies
 
 If you don't have [uv](https://docs.astral.sh/uv/) installed, install it with
 
@@ -60,52 +110,31 @@ This creates a venv and installs all necessary python dependencies:
 uv run identify.py --help
 ```
 
-## Quick Start
 
-1. **Generate policies for your files:**
-`uv run identify.py path/to/directory`
-
-2. **Review generated policies:** Edit `path/to/directory_policies.json` to customize conversion rules
-
-3. **Test files and apply the policies:**
-`uv run indentify.py path/to/directory -iar`
-or **if you want to use a docker image:**
-`uv run indentify.py path/to/directory -iar --docker` this runs the script with the flags **-iar**
-in a docker container (see **options** below)
-
-### Docker
-
-With the flag `--docker`, the script generates a docker image and executes itself in a docker container.
-
-If you don't have the required programs installed, you need to append this flag if you run the script with
-any of the flags `-i`, `-a`, `-t` (inspecting the files, file conversion and test conversion for a policy).
-for all other options you are perfectly fine with the python dependencies.
-
-## Single Execution Steps
+## Single Execution Steps Explained
 
 ### Detect File Formats - Generate Conversion Policies
 
 `uv run identify.py path/to/directory`
 
-Generate two json files:
+Generate two JSON files:
 
 **path/to/directory_log.json** : The technical metadata of all the files in the folder
 
 **path/to/directory_policies.json** : A file conversion protocol for each file format
-that was encountered in the folder according to the default policies located in
-`fileidentification/policies/default.py`. Edit it to customize conversion rules.
+that was encountered in the folder according to the default policies. Edit it to customize conversion rules.
 
-### File Integrity Tests
+### Inspect The Files (-i)
 
 `uv run identify.py path/to/directory -i`
 
-Test the files for their integrity and move corrupted files to the folder in `path/to/directory_TMP/_REMOVED`.
+Probes the files on errors and move corrupted files to the folder in `path/to/directory_TMP/_REMOVED`.
 
 You can also add the flag `-v` (`--verbose`) for more detailed inspection. (see **options** below)
 
 NOTE: Currently only audio/video and image files are tested.
 
-### File Conversion
+### Applying Policies, File Conversion (-a)
 
 `uv run identify.py path/to/directory -a`
 
@@ -113,7 +142,7 @@ Apply the policies defined in `path/to/directory_policies.json` and convert file
 The converted files are temporary stored in `path/to/directory_TMP` (default) with the log output
 of the program used as log.txt next to it.
 
-### Clean Up Temporary Files
+### Clean Up Temporary Files (-r)
 
 `uv run identify.py path/to/directory -r`
 
@@ -122,25 +151,10 @@ Delete all temporary files and folders and move the converted files next to thei
 ### Combining Steps - Custom Policies and Working Directory
 
 If you don't need these intermediary steps, you can run the desired steps at once by combining their flags.
-Here is an example how to do verbose testing, applying a custom policy and set the location to the tmp
-directory other than default (see **option** below for more information about the flags):
+Here is an example how to do verbose testing, applying a custom policy
+(see **option** below for more information about the flags):
 
-`uv run identify.py path/to/directory -ariv -p path/to/custom_policies.json --tmp-dir path/to/tmp-dir`
-
-Another use case example: If you have a customised policies file and want to run it against a different folder and
-apply it using docker
-
-1. First generate the policies file for the folder with using an existing policies and extend it with file formats
-encountered in the folder that are missing in the policies passed:
-`uv run identify.py path/to/directory -ep somewhere/else/policies.json`
-
-2. You might have a blank policy for a file type you didn't expect in the bulk file folder. Edit the policy with the
-desired file conversion an run test conversion in a docker container:
-`uv run identify.py path/to/directory --docker -t`
-
-3. Inspect the files verbose, apply the policies and replace the parent files with the converted ones
-all running in a docker container:
-`uv run identify.py path/to/directory -ivarx --docker`
+`uv run identify.py path/to/directory -ariv -p path/to/custom_policies.json`
 
 ### Log
 
@@ -150,6 +164,7 @@ Iterations of file conversions such as A -> B, B -> C, ... are logged in the sam
 
 If you wish a simpler csv output, you can add the flag `--csv` anytime when you run the script,
 which converts the `log.json` of the actual status of the directory to a csv.
+
 
 ## Advanced Usage
 
@@ -227,29 +242,30 @@ If you just want to test a specific policy, append f and the puid
 
 `uv run identify.py path/to/directory -tf fmt/XXX`
 
+
 ## Modifying Default Settings
 
-In the .env file you can customise some default path: e.g. the paths to the default policies, set custom default
-tmp dir location.
+In the .env file you can customise some default path: e.g. DEFAULTPOLICIES the paths to the default policies, 
+set custom default tmp dir location.
 
 Other default params such as PDF/A export settings for LibreOffice or other strings are in 
 `fileidentification/definitions/constants.py`.
 
+
 ## Options
 
 `-i`
-[`--integrity-tests`] tests the files for their integrity
+[`--inspect`] probe the files on errors
 
 `-v`
-[`--verbose`] catches more warnings on video and image files during the integrity tests.
+[`--verbose`] catch more warnings on video and image files during the tests.
 this can take a significantly longer based on what files you have. As an addition,
-it handles some warnings as an error.
 
 `-a`
-[`--apply`] applies the policies
+[`--apply`] apply the policies
 
 `-r`
-[`--remove-tmp`] removes all temporary items and adds the converted files next to their parents.
+[`--remove-tmp`] remove all temporary items and add the converted files next to their parents.
 
 `-x`
 [`--remove-original`] this overwrites the remove_original value in the policies and sets it to true when removing
@@ -257,24 +273,20 @@ the tmp files. the original files are moved to the TMP/_REMOVED folder.
 When used in generating policies, it sets remove_original in the policies to true (default false).
 
 `-p`
-[`--policies-path`] load a custom policies json file
-
-`-s`
-[`--strict`] when run in strict mode, it moves the files that are not listed in policies.json to the folder _REMOVED
-(instead of throwing a warning).
-When used in generating policies, it does not add blank policies for formats that are not mentioned in
-fileidentification/policies/default.py
-
-`-b`
-[`--blank`] creates a blank policies based on the files encountered in the given directory.
+[`--policies-path`] load a custom policies JSON file instead of the default policies
 
 `-e`
 [`--extend-policies`] append filetypes found in the directory to the given policies if they are missing in it.
 
+`-s`
+[`--strict`] move the files that are not listed in policies.json to the folder _REMOVED (instead of throwing a warning).
+When used in generating policies, do not add blank policies for formats that are not mentioned in DEFAULTPOLICIES.
+
+`-b`
+[`--blank`] create a blank policies based on the file types encountered in the given directory.
+
 `-q`
 [`--quiet`] just print errors and warnings
-
-`--tmp-dir` set a custom tmp directory where converted / removed files are stored. default is path/to/directory_TMP
 
 `--csv`
 get an additional output as csv aside from the log.json
@@ -282,39 +294,13 @@ get an additional output as csv aside from the log.json
 `--convert`
 re-convert the files that failed during file conversion
 
-`--docker`
-this runs the script with the flags in a docker container. Please note that with this
-option the flags **--tmp-dir**, **-p**, **-b** and **-e** are ignored.
-
-## using it in your code
-
-as long as you have all the dependencies installed and run python **version >=3.8**, have **typer**, **pydanic**, **pygfried**
-installed in your project, you can copy the fileidentification folder into your project folder and import the
-FileHandler to your code
-
-```python
-from fileidentification.filehandling import FileHandler
-
-
-# this runs it with default parameters (flags -ivarq), but change the parameters to your needs
-fh = FileHandler()
-fh.run("path/to/directory")
-
-
-# or if you just want to do integrity tests
-fh = FileHandler()
-fh.integrity_tests("path/to/directory")
-
-# log it at some point and have an additional csv
-fh.write_logs("path/where/to/log", to_csv=True)
-
-```
 
 ## Updating Signatures
 
 ```bash
-uv run update.py && uv lock --upgrade
+uv sync --extra update_fmt && uv run update.py
 ```
+
 
 ## Useful Links
 
@@ -365,3 +351,15 @@ Keep in mind:
   not in the `WORKDIR` specified in the Dockerfile.
 - Only the user directory is writable, all other dirs are read-only: the input dir, `/app`, ...
 - Commands inside the `<command>` block should reference the entire path to `/app/<script.py>`.
+
+Make sure the upstream is set correctly:
+
+```bash
+git remote -v
+origin	    git@github.com:dasch-swiss/fileidentification-galaxy (fetch)
+origin	    git@github.com:dasch-swiss/fileidentification-galaxy (push)
+upstream	git@github.com:dasch-swiss/fileidentification.git (fetch)
+upstream	git@github.com:dasch-swiss/fileidentification.git (push)
+```
+
+Synchronize with upstream: `git fetch upstream; git merge upstream/main`
