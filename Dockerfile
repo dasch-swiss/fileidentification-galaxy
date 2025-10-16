@@ -27,9 +27,12 @@ WORKDIR /app
 # add the py env
 COPY --from=py_env /app/.venv /app/.venv
 
+# Add venv to PATH so python and installed packages are available
+ENV PATH="/app/.venv/bin:$PATH"
+
 # copy the app
 COPY ./fileidentification /app/fileidentification
 COPY ./identify.py /app/.
 COPY .env /app/.
 
-ENTRYPOINT ["/app/.venv/bin/python3", "/app/identify.py"]
+ENTRYPOINT ["python3", "/app/identify.py"]
