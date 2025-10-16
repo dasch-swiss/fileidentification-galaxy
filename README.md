@@ -350,7 +350,11 @@ Keep in mind:
 - The commands inside the `<command>` block of the XML file are executed in a dedicated user directory defined by Galaxy - 
   not in the `WORKDIR` specified in the Dockerfile.
 - Only the user directory is writable, all other dirs are read-only: the input dir, `/app`, ...
-- Commands inside the `<command>` block should reference the entire path to `/app/<script.py>`.
+- Even if `planemo test` can handle absolute paths to `/app/.venv/bin/python` inside the `<command>` block,
+  this doesn't work for `planemo serve`.
+  Instead, add `/app` to `PATH` in the Dockerfile (with `ENV PATH="/app/.venv/bin:$PATH"`),
+  and then call `python` inside the `<command>` block.
+- The ENTRYPOINT of the Dockerfile is executed before the first command inside the `<command>` block.
 
 Make sure the upstream is set correctly:
 
