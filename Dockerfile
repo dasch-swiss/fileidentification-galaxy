@@ -22,6 +22,6 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 RUN uv export | uv pip install --system -r -
 
 # Make identify.py executable
-RUN chmod +x /app/identify.py && \
+RUN chmod a+x /app/identify.py && \
     echo '#!/usr/bin/env python3' | cat - /app/identify.py > /tmp/identify.py && \
     mv /tmp/identify.py /app/identify.py
