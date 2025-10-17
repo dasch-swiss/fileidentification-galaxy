@@ -17,7 +17,7 @@ unzip $input1 -d input_dir &&
     <tests>
         <test>
             <param name="input1" value="test-data.zip"/>
-            <output name="out" ftype="txt" file="output_results.txt"/>
+            <output name="out" ftype="txt" file="output_results_linux_gh_action.txt"/>
         </test>
     </tests>
     <help><![CDATA[
