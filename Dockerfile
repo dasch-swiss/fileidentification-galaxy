@@ -19,7 +19,7 @@ COPY . .
 
 # install python packages
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-RUN uv export | uv pip install -r --system -
+RUN uv export | uv pip install --system -r -
 
 # Make identify.py executable
 RUN chmod +x /app/identify.py && \
