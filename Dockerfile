@@ -1,21 +1,12 @@
-FROM python:3.12-slim-trixie AS py_env
-
-# installing the py env, pygfried needs golang but just for installing
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-RUN apt-get update && apt-get install -y golang
-
-WORKDIR /app
-COPY . .
-RUN uv sync --no-group dev
-
 FROM python:3.12-trixie
 
 # Set environment variables to prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-# install the programs
+# install system programs
 RUN apt-get update && apt-get install --no-install-recommends -y \
+    golang \
     ffmpeg \
     imagemagick \
     ghostscript \
@@ -23,11 +14,14 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+ENV PATH="/app:$PATH"
+COPY . .
 
-# add the py env
-COPY --from=py_env /app/.venv /app/.venv
+# install python packages
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+RUN uv export | uv pip install -r --system -
 
-# copy the app
-COPY ./fileidentification /app/fileidentification
-COPY ./identify.py /app/.
-COPY .env /app/.
+# Make identify.py executable
+RUN chmod +x /app/identify.py && \
+    echo '#!/usr/bin/env python3' | cat - /app/identify.py > /tmp/identify.py && \
+    mv /tmp/identify.py /app/identify.py
