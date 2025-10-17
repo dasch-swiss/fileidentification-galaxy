@@ -20,8 +20,10 @@ COPY . .
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 RUN uv export | uv pip install --system -r -
 
-# Make identify.py executable and link to standard location
+# Make identify.py executable and create wrapper script in /usr/local/bin
 RUN chmod a+x /app/identify.py && \
     echo '#!/usr/bin/env python3' | cat - /app/identify.py > /tmp/identify.py && \
     mv /tmp/identify.py /app/identify.py && \
-    ln -s /app/identify.py /usr/local/bin/identify.py
+    echo '#!/bin/sh' > /usr/local/bin/identify.py && \
+    echo 'exec python3 /app/identify.py "$@"' >> /usr/local/bin/identify.py && \
+    chmod a+x /usr/local/bin/identify.py
