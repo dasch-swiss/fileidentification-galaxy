@@ -11,7 +11,7 @@ permissions:
   pull-requests: read
 
 jobs:
-  lint:
+  planemo-test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
