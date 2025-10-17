@@ -22,13 +22,13 @@ source .venv/bin/activate
 Spin up Galaxy, to run the tool [in the browser](http://127.0.0.1:9090/):
 
 ```bash
-planemo serve
+planemo serve --galaxy_root=.galaxy
 ```
 
 Run the tests:
 
 ```bash
-planemo test --biocontainers fileidentification-galaxy.xml
+planemo test --biocontainers --galaxy_root=.galaxy fileidentification-galaxy.xml
 ```
 
 Keep in mind:
