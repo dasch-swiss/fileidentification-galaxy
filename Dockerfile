@@ -1,4 +1,4 @@
-FROM python:3.12-trixie AS py_env
+FROM python:3.12-slim-trixie AS py_env
 
 # installing the py env, pygfried needs golang but just for installing
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
@@ -8,7 +8,7 @@ WORKDIR /app
 COPY . .
 RUN uv sync --no-group dev
 
-FROM python:3.12-slim-trixie
+FROM python:3.12-trixie
 
 # Set environment variables to prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
