@@ -3,9 +3,9 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import pygfried
-from dotenv import load_dotenv
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from typer import colors, secho
 
@@ -36,8 +36,6 @@ from fileidentification.tasks.inspection import inspect_file
 from fileidentification.tasks.os_tasks import move_tmp, set_filepaths
 from fileidentification.tasks.policies import apply_policy
 
-load_dotenv()
-
 
 class FileHandler:
     """Main class. It can create, verify and apply policies, test the files on errors, convert and move them."""
@@ -49,6 +47,7 @@ class FileHandler:
         self.ba = BasicAnalytics()
         self.stack: list[SfInfo] = []
         self.fp: FilePaths = FilePaths()
+        self.config: dict[str, Any] = {}
 
     def _load_sfinfos(self, root_folder: Path) -> None:
         """
@@ -127,7 +126,7 @@ class FileHandler:
             return
 
         # default values
-        default_path = os.getenv("DEFAULTPOLICIES", "fileidentification/definitions/default_policies.json")
+        default_path = self.config["policies"]["DEFAULTPOLICIES"]
         default_policies = self._load_policies(Path(default_path))
         jsonfile.comment += f" using default policies {default_path}"
         jsonfile.comment += " in strict mode" if self.mode.STRICT else ""
@@ -168,7 +167,7 @@ class FileHandler:
             self._gen_policies(policies_path, blank=blank)
         # load the external passed policies with option -p or default location
         else:
-            print_msg(f"... loading policies form {policies_path}", self.mode.QUIET)
+            print_msg(f"... loading policies from {policies_path}", self.mode.QUIET)
             self._load_policies(policies_path)
 
         # expand a passed policies with the filetypes found in root_folder that are not yet in the policies
@@ -189,7 +188,6 @@ class FileHandler:
         if not puids:
             print_msg("no files found that should be converted with given policies", self.mode.QUIET)
         else:
-            print_fmts(puids, self.ba, self.policies, self.mode)
             print_msg("\n --- testing policies with a sample from the directory ---", self.mode.QUIET)
 
             for puid in puids:  # noqa: PLR1704
@@ -294,7 +292,7 @@ class FileHandler:
     ) -> None:
         root_folder = Path(root_folder)
         # set dirs / paths
-        set_filepaths(self.fp, root_folder)
+        set_filepaths(self.fp, self.config, root_folder)
         # set the mode
         self.mode.REMOVEORIGINAL = remove_original
         self.mode.VERBOSE = mode_verbose
