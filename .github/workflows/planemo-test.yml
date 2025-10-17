@@ -23,6 +23,8 @@ jobs:
       - name: Install Python dependencies (uv will install python automatically, if no appropriate version is installed)
         run: uv sync --all-extras --dev
         shell: bash
+      - name: Build Docker image
+        run: docker buildx build -t daschswiss/fileidentification-galaxy:latest .
       - name: Run planemo e2e tests
         run: uv run planemo test --biocontainers --galaxy_root=.galaxy fileidentification-galaxy.xml
       - name: make test output available
