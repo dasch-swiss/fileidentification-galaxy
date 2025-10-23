@@ -6,7 +6,8 @@
     </requirements>
     <command detect_errors="exit_code"><![CDATA[
 unzip $input1 -d input_dir &&
-/app/.venv/bin/python /app/identify.py ./input_dir > results.txt
+/app/.venv/bin/python /app/identify.py ./input_dir &&
+/app/.venv/bin/python /app/identify.py -i ./input_dir > results.txt
     ]]></command>
     <inputs>
         <param type="data" name="input1" label="ZIP containing the files to be analysed" format="zip"/>

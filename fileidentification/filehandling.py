@@ -167,7 +167,6 @@ class FileHandler:
             self._gen_policies(policies_path, blank=blank)
         # load the external passed policies with option -p or default location
         else:
-            print_msg(f"... loading policies from {policies_path}", self.mode.QUIET)
             self._load_policies(policies_path)
 
         # expand a passed policies with the filetypes found in root_folder that are not yet in the policies
@@ -202,7 +201,7 @@ class FileHandler:
 
     def inspect(self) -> None:
         print_msg("\nprobing the files ...", self.mode.QUIET)
-        with Progress(SpinnerColumn(), transient=True) as prog:
+        with Progress(SpinnerColumn(), transient=True, disable=True) as prog:
             prog.add_task(description="", total=None)
             for sfinfo in self.stack:
                 if not (sfinfo.status.removed or sfinfo.dest):
