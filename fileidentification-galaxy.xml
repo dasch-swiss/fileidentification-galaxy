@@ -7,7 +7,7 @@
     <command detect_errors="exit_code"><![CDATA[
 unzip $input1 -d input_dir &&
 /app/.venv/bin/python /app/identify.py ./input_dir &&
-/app/.venv/bin/python /app/identify.py ./input_dir -i > results.txt
+/app/.venv/bin/python /app/identify.py ./input_dir --inspect > results.txt
     ]]></command>
     <inputs>
         <param type="data" name="input1" label="ZIP containing the files to be analysed" format="zip"/>
@@ -29,7 +29,7 @@ This tool
 - gives you an overview of what file types there are
 - checks if there are any hidden duplicates
 - checks if the extension of the files match their content
-- checks if the content of the files is uncorrupted
+- checks if the content of the files is intact
 
 A possible use case are digital preservation workflows,
 where you want to make sure that you only preserve high-quality files for the future.
