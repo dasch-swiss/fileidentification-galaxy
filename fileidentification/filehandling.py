@@ -200,7 +200,6 @@ class FileHandler:
                     secho(f"You find the file with the log in {t_sfinfo.filename.parent}")
 
     def inspect(self) -> None:
-        print_msg("\nprobing the files ...", self.mode.QUIET)
         with Progress(SpinnerColumn(), transient=True, disable=True) as prog:
             prog.add_task(description="", total=None)
             for sfinfo in self.stack:

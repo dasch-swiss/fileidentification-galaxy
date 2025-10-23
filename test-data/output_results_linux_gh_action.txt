@@ -17,8 +17,6 @@ no. of files  | combined size  | fmt type   | policy     | convert    | format n
 1             | 0.678 MB       | fmt/585    |            | ffmpeg     | MPEG-2 Transport Stream
 1             | 0.266 MB       | fmt/5      |            | ffmpeg     | Audio/Video Interleaved Format
 
-probing the files ...
-
 WARNING: you should manually rename SampleJPGImage.tif
 expecting one of the following ext: ['jfi', 'jfif', 'jif', 'jpe', 'jpeg', 'jpg']
 
