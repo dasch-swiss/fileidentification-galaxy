@@ -22,18 +22,17 @@ source .venv/bin/activate
 Spin up Galaxy, to run the tool [in the browser](http://127.0.0.1:9090/):
 
 ```bash
-planemo serve --biocontainers --galaxy_root=.galaxy
+planemo serve --biocontainers
 ```
 
 Run the tests:
 
 ```bash
-planemo test --biocontainers --galaxy_root=.galaxy fileidentification-galaxy.xml
+planemo test --biocontainers fileidentification-galaxy.xml
 ```
 
 Keep in mind:
 
-- Before running the tests, make sure that Docker Desktop for Mac allows bind mounting of `/private/var` and `/var`.
 - Do not use `\` for line continuation inside the CDATA block of `<command>`.
 - Do not indent new lines inside the CDATA block of `<command>`.
 - Inside the Docker container, the app is installed in `/app`, which is read-only in Galaxy.
@@ -54,4 +53,5 @@ upstream	git@github.com:dasch-swiss/fileidentification.git (fetch)
 upstream	git@github.com:dasch-swiss/fileidentification.git (push)
 ```
 
-Synchronize with upstream: `git fetch upstream; git merge upstream/main`
+Synchronize with upstream: `git fetch upstream; git merge upstream/main -m "Pull in changes from upstream"`,
+or better: in the GitHub UI.
