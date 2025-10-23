@@ -15,6 +15,7 @@ def main(
             "--inspect",
             "-i",
             help="probing the files in the selected folder",
+            is_flag=True,
         ),
     ] = False,
     apply: Annotated[
