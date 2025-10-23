@@ -6,7 +6,6 @@
     </requirements>
     <command detect_errors="exit_code"><![CDATA[
 unzip $input1 -d input_dir &&
-/app/.venv/bin/python /app/identify.py ./input_dir &&
 /app/.venv/bin/python /app/identify.py ./input_dir --inspect > results.txt
     ]]></command>
     <inputs>
