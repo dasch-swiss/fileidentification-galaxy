@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 from typing import Annotated
 
@@ -97,7 +98,7 @@ def main(
     to_csv: Annotated[bool, typer.Option("--csv", help="get a csv out of the log.json")] = False,
 ) -> None:
     fh = FileHandler()
-    fh.config = toml.load("appconfig.toml")
+    fh.config = toml.load("/app/appconfig.toml")
     fh.run(
         root_folder=root_folder,
         inspect=inspect,
@@ -117,5 +118,16 @@ def main(
     )
 
 
+def _sanitize_sys_argv_for_galaxy() -> None:
+    """Workaround for Galaxy: Remove redundant elements from sys.argv which would make typer crash."""
+    for elem in sys.argv.copy():
+        if elem.endswith("/tool_script.sh") or elem == "/bin/sh":
+            print(f"Remove from sys.argv: {elem}")
+            sys.argv.remove(elem)
+
+
 if __name__ == "__main__":
+    print(f"sys.argv before sanitizing: {sys.argv}")
+    _sanitize_sys_argv_for_galaxy()
+    print(f"sys.argv after sanitizing: {sys.argv}")
     typer.run(main)
