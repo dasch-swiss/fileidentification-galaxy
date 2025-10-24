@@ -28,7 +28,7 @@ This tool
 - gives you an overview of what file types there are
 - checks if there are any hidden duplicates
 - checks if the extension of the files match their content
-- checks if the content of the files is uncorrupted
+- checks if the content of the files is intact
 
 A possible use case are digital preservation workflows,
 where you want to make sure that you only preserve high-quality files for the future.
