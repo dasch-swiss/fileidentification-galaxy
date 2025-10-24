@@ -52,11 +52,20 @@ Make sure the upstream is set correctly:
 
 ```bash
 git remote -v
-origin	    git@github.com:dasch-swiss/fileidentification-galaxy (fetch)
-origin	    git@github.com:dasch-swiss/fileidentification-galaxy (push)
+origin	  git@github.com:dasch-swiss/fileidentification-galaxy (fetch)
+origin	  git@github.com:dasch-swiss/fileidentification-galaxy (push)
 upstream	git@github.com:dasch-swiss/fileidentification.git (fetch)
 upstream	git@github.com:dasch-swiss/fileidentification.git (push)
 ```
 
-Synchronize with upstream: `git fetch upstream; git merge upstream/main -m "Pull in changes from upstream"`,
-or better: in the GitHub UI.
+To synchronize with upstream, create a PR with the changes from upstream:
+
+```bash
+git fetch upstream
+git checkout -b sync-upstream
+git merge upstream/main -m "Pull in changes from upstream"
+git push -u origin sync-upstream
+gh pr create --title "Sync with upstream" --body "Synchronize fork with upstream changes"
+```
+
+Alternatively, use the GitHub UI to create a PR from the upstream branch.
