@@ -76,7 +76,7 @@ If the user edited auto-generated policies, the outcome of the policies can be t
 
 ## Configuration
 
-### Environment Variables (`.env`)
+### App Config (`appconfig.toml`)
 
 - `DEFAULTPOLICIES`: Path to default policies JSON
 - `TMP_DIR`: Temporary directory suffix (default: `_TMP`)
@@ -138,3 +138,18 @@ uv run identify.py path/to/directory -iar
 - The tool supports both direct execution and Docker containerization
 - All file operations are logged extensively in JSON format
 - Temporary files are managed in structured `_TMP` directories
+
+## Galaxy Integration
+
+This is a fork which adds some stuff to integrate this tool into the
+[Galaxy](https://docs.galaxyproject.org/en/master/) HPC platform.
+The Galaxy integration itself happens via @fileidentification-galaxy.xml,
+and the setup is explained in @README_Galaxy.md.
+
+The XML file describes in tool > requirements > container that Galaxy should spin up our Docker container,
+and then execute the commands in tool > command.
+The tool > inputs and tool > outputs describe how Galaxy should build the GUI,
+and how the data flows from the user into our docker container, and from there back to the user.
+tool > tests defines an e2e test where planemo spins up a local Galaxy instance in which our tool is executed.
+
+[Planemo](https://planemo.readthedocs.io/en/latest/) is a tool that supports development of Galaxy tools.
