@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 from typing import Annotated
 
 import toml
@@ -117,5 +118,13 @@ def main(
     )
 
 
+def _sanitize_sys_argv_for_galaxy() -> None:
+    """Workaround for Galaxy: Remove redundant elements from sys.argv which would make typer crash."""
+    for elem in sys.argv.copy():
+        if "/private/var/folders/" in elem or elem == "/bin/sh":
+            sys.argv.remove(elem)
+
+
 if __name__ == "__main__":
+    _sanitize_sys_argv_for_galaxy()
     typer.run(main)

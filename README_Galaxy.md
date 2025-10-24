@@ -44,6 +44,11 @@ Keep in mind:
 - The Terminal output of the tool slightly differs across operating systems, e.g. regarding the order of files.
   The e2e test will fail on MacOS, because the expected output doesn't exactly match the actual output.
   You can run the e2e test on MacOS anyways, to get a rough idea about what's going on.
+- Galaxy puts the contents of the `<command>` block into `tool_script.sh` in a subdir of `/private/var/folders/`,
+  which is then executed.
+  Therefore, `sys.argv` is `['/app/identify.py', '/bin/sh', '/private/var/folders/.../tool_script.sh']`.
+  This makes `typer` crash with `Got unexpected extra argument`.
+  As a workaround, the 2 extra elements are sifted out from `sys.argv`.
 
 
 ## Synchronize this fork with the upstream
