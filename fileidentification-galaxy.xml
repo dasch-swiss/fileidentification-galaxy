@@ -5,8 +5,8 @@
         </container>
     </requirements>
     <command detect_errors="exit_code"><![CDATA[
-unzip $input1 -d input_dir &&
-ls -la input_dir &&
+unzip $input1 -d ./input_dir &&
+ls -la ./input_dir &&
 /app/.venv/bin/python /app/identify.py ./input_dir > results.txt
     ]]></command>
     <inputs>
