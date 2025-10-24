@@ -122,10 +122,12 @@ def _sanitize_sys_argv_for_galaxy() -> None:
     """Workaround for Galaxy: Remove redundant elements from sys.argv which would make typer crash."""
     for elem in sys.argv.copy():
         if elem.endswith("/tool_script.sh") or elem == "/bin/sh":
+            print(f"Remove from sys.argv: {elem}")
             sys.argv.remove(elem)
 
 
 if __name__ == "__main__":
+    print(f"sys.argv before sanitizing: {sys.argv}")
     _sanitize_sys_argv_for_galaxy()
-    print(sys.argv)
+    print(f"sys.argv after sanitizing: {sys.argv}")
     typer.run(main)
