@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Annotated
 
+import toml
 import typer
 
 from fileidentification.filehandling import FileHandler
@@ -96,6 +97,7 @@ def main(
     to_csv: Annotated[bool, typer.Option("--csv", help="get a csv out of the log.json")] = False,
 ) -> None:
     fh = FileHandler()
+    fh.config = toml.load("/app/appconfig.toml")
     fh.run(
         root_folder=root_folder,
         inspect=inspect,
