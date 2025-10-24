@@ -1,7 +1,5 @@
 # Fileidentification
 
-Check main branch
-
 A python CLI to identify file formats and bulk convert files.
 It is designed for digital preservation workflows and is basically a python wrapper around several programs.
 It uses [pygfried](https://pypi.org/project/pygfried/)
