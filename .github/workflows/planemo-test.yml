@@ -26,15 +26,11 @@ jobs:
       - name: Build Docker image
         run: docker buildx build -t daschswiss/fileidentification-galaxy:latest .
       - name: Run planemo e2e tests
-        run: |
-          BRANCH_NAME="${{ github.head_ref  || github.ref_name}}"
-          BRANCH_NAME_SAFE=$(echo "$BRANCH_NAME" | tr -cd 'a-zA-Z0-9._-')
-          TEST_OUTPUT="github_${BRANCH_NAME_SAFE}_$(date +%Y-%m-%d_%H.%M.%S).html"
-          uv run planemo test --biocontainers --test_output="$TEST_OUTPUT" fileidentification-galaxy.xml
+        run: uv run planemo test --biocontainers --galaxy_root=.galaxy fileidentification-galaxy.xml
       - name: make test output available
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: tool_test_output
-          path: github_*
+          path: tool_test_output.*
           compression-level: 0
