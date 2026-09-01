@@ -6,7 +6,7 @@ on:
     paths:
       - 'fileidentification/**'
       - 'identify.py'
-      - 'Dockerfile'
+      - 'Dockerfile.galaxy'
       - 'pyproject.toml'
       - 'uv.lock'
 

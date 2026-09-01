@@ -32,6 +32,7 @@ jobs:
       - name: Build Docker image
         run: |
           docker buildx build \
+            -f Dockerfile.galaxy \
             -t daschswiss/fileidentification-galaxy:latest \
             -t daschswiss/fileidentification-galaxy:${{ steps.version.outputs.tool_version }} \
             .

@@ -1,0 +1,54 @@
+---
+
+name: Guard the Galaxy Image
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+      - 'fileidentification/**'
+      - 'identify.py'
+      - 'Dockerfile.galaxy'
+      - 'pyproject.toml'
+      - 'uv.lock'
+
+permissions:
+  contents: read
+
+jobs:
+  docker-e2e:
+    name: Run the vendored e2e suite against the slim image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+        shell: bash
+      - name: Build the Galaxy image
+        run: docker build -f Dockerfile.galaxy -t fileidentification-galaxy:ci .
+        shell: bash
+      # The e2e suite drives the image as `docker run <image> <flags> <dir>`, which needs an
+      # ENTRYPOINT. Galaxy's image deliberately has none (Galaxy invokes `/bin/sh <script>`
+      # directly), so wrap it in a throwaway layer just for this test run. The shipped image
+      # (Dockerfile.galaxy, built above and published unmodified) never carries this layer.
+      - name: Build a CI-only entrypoint wrapper for the e2e suite
+        run: |
+          printf 'FROM fileidentification-galaxy:ci\nENTRYPOINT ["/app/.venv/bin/python3", "/app/identify.py"]\n' \
+            | docker build -t fileidentification-galaxy:ci-entrypoint -
+        shell: bash
+      # Deselected by node id, so no upstream markers are required: the slim image never ships
+      # libreoffice or sipi, and these two tests exercise exactly those binaries.
+      - name: Run the e2e suite against the slim image
+        run: |
+          uv run pytest -m docker \
+            --deselect tests/test_docker.py::test_soffice_converts_doc_to_docx \
+            --deselect tests/test_docker.py::test_sipi_guard_quarantines_undecodable_image
+        shell: bash
+        env:
+          FIDR_IMAGE: fileidentification-galaxy:ci-entrypoint
+          FIDR_NO_BUILD: "1"
