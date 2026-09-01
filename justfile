@@ -58,4 +58,18 @@ lint-fix:
     uv run ruff check --fix .
 
 # Run all checks: lint and typecheck
-check: lint typecheck
+check: lint format typecheck
+
+# Run the fast unit tests (no docker needed)
+test:
+    uv run pytest -m "not docker"
+
+# Build the image and run the docker end-to-end tests
+test-docker:
+    docker build -t fileidentification .
+    uv run pytest -m docker
+
+# Build the image and run the whole test suite
+test-all:
+    docker build -t fileidentification .
+    uv run pytest
