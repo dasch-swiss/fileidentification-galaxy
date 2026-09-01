@@ -8,7 +8,7 @@ WORKDIR /app
 COPY . .
 RUN uv sync --no-group dev
 
-FROM python:3.12-trixie
+FROM python:3.12-slim-trixie
 
 # Set environment variables to prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
@@ -24,6 +24,9 @@ RUN apt-get install --no-install-recommends -y \
     libreoffice-nogui \
     && rm -rf /var/lib/apt/lists/*
 
+# sipi: DaSCH service-file verifier (statically linked binary, copied from the official image)
+COPY --from=daschswiss/sipi:latest /sbin/sipi /usr/local/bin/sipi
+
 WORKDIR /app
 
 # add the py env
@@ -32,3 +35,5 @@ COPY --from=py_env /app/.venv /app/.venv
 # copy the app
 COPY ./fileidentification /app/fileidentification
 COPY ./identify.py /app/identify.py
+
+ENTRYPOINT ["/app/.venv/bin/python3", "/app/identify.py"]

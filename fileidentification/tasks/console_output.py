@@ -1,22 +1,32 @@
-import math
 from pathlib import Path
 
 from rich import box
 from rich.console import Console
 from rich.style import Style
 from rich.table import Table
+from rich.text import Text
+from rich.tree import Tree
 from typer import colors, secho
 
-from fileidentification.definitions.models import BasicAnalytics, LogMsg, LogTables, Mode, Policies
-from fileidentification.definitions.settings import FMT2EXT, FDMsg
+from fileidentification.definitions.models import BasicAnalytics, LogMsg, Mode, Policies, RunJournal
+from fileidentification.definitions.settings import FMT_INFO, FDMsg
+from fileidentification.tasks.conversion import ConversionResult
+
+# one shared console for all structured output; dynamic content is printed as literal Text (never markup) so
+# values containing brackets (e.g. "conversion failed [magick] boom") render verbatim.
+console = Console()
 
 
 def print_siegfried_errors(ba: BasicAnalytics) -> None:
     """Print files for which siegfried reported a read error during identification."""
-    if ba.siegfried_errors:
-        secho("got the following errors from siegfried", bold=True)
-        for sfinfo in ba.siegfried_errors:
-            secho(f"{sfinfo.filename} \n{sfinfo.errors}", fg=colors.RED)
+    if not ba.siegfried_errors:
+        return
+    console.line()
+    for sfinfo in ba.siegfried_errors:
+        _print_file_header(sfinfo.filename, sfinfo.filesize, "siegfried error")
+        _print_logs([LogMsg(name="siegfried", msg=sfinfo.errors)])
+        console.line()
+    console.line()
 
 
 def print_fmts(puids: list[str], ba: BasicAnalytics, policies: Policies, mode: Mode) -> None:
@@ -27,18 +37,21 @@ def print_fmts(puids: list[str], ba: BasicAnalytics, policies: Policies, mode: M
     """
     if mode.QUIET:
         return
-    table = Table(title="", box=box.SIMPLE)
+    table = Table(
+        title="",
+        box=box.SIMPLE,
+        title_style="bold",
+        title_justify="left",
+        header_style="bold",
+    )
     table.add_column("PUID")
     table.add_column("Format Name")
-    table.add_column("File Count")
-    table.add_column("Combined Size")
+    table.add_column("File Count", justify="right")
+    table.add_column("Combined Size", justify="right")
     table.add_column("Policy")
 
     for puid in puids:
-        bytes_size: int = 0
-        for sfinfo in ba.puid_unique[puid]:
-            bytes_size += sfinfo.filesize
-        size = _format_bite_size(bytes_size)
+        size = _format_bite_size(sum(s.filesize for s in ba.puid_unique[puid]))
         po = ""
         style = Style(color=colors.WHITE)
         if puid not in policies:
@@ -51,63 +64,90 @@ def print_fmts(puids: list[str], ba: BasicAnalytics, policies: Policies, mode: M
         if ba.blank and puid in ba.blank:
             po = "blank"
             style = Style(color=colors.YELLOW)
-        table.add_row(puid, f"{FMT2EXT[puid]['name']}", f"{len(ba.puid_unique[puid])}", size, po, style=style)
-    console = Console()
+        table.add_row(puid, f"{FMT_INFO[puid].name}", f"{len(ba.puid_unique[puid])}", size, po, style=style)
     console.print(table)
 
 
-def print_diagnostic(log_tables: LogTables, mode: Mode) -> None:
-    """
-    Print corruption errors always, and (in verbose mode) warnings and extension mismatches.
-    Each entry shows file size, filename, and the associated log messages.
-    """
-    # lists all corrupt files with the respective errors thrown
-    if log_tables.diagnostics:
-        if FDMsg.ERROR.name in log_tables.diagnostics:
-            secho("\n----------- Errors -----------", bold=True)
-            for sfinfo in log_tables.diagnostics[FDMsg.ERROR.name]:
-                secho(f"\n{_format_bite_size(sfinfo.filesize): >10}    {sfinfo.filename}", bold=True)
-                _print_logs(sfinfo.warnings)
-        if mode.VERBOSE and not mode.QUIET:
-            if FDMsg.WARNING.name in log_tables.diagnostics:
-                secho("\n----------- Warnings -----------", bold=True)
-                for sfinfo in log_tables.diagnostics[FDMsg.WARNING.name]:
-                    secho(f"\n{_format_bite_size(sfinfo.filesize): >10}    {sfinfo.filename}", bold=True)
-                    _print_logs(sfinfo.warnings)
-            if FDMsg.EXTMISMATCH.name in log_tables.diagnostics:
-                secho("\n----------- Extension mismatch -----------", bold=True)
-                for sfinfo in log_tables.diagnostics[FDMsg.EXTMISMATCH.name]:
-                    secho(f"\n{_format_bite_size(sfinfo.filesize): >10}    {sfinfo.filename}", bold=True)
-                    _print_logs(sfinfo.processing_logs)
+def _print_bucket(journal: RunJournal, diagnostics: FDMsg) -> None:
+    """Print one diagnostics bucket: each file, then its processing logs for context."""
+    sfinfos = journal.diagnostics.get(diagnostics.name)
+    if not sfinfos:
+        return
+    console.line()
+    for sfinfo in sfinfos:
+        _print_file_header(sfinfo.filename, sfinfo.filesize, diagnostics)
+        _print_logs(sfinfo.processing_logs)
+        console.line()
+    console.line()
+
+
+def print_diagnostic(journal: RunJournal, mode: Mode) -> None:
+    """Print corruption errors always, and (unless quiet) warnings and extension mismatches."""
+    if not mode.QUIET:
+        _print_bucket(journal, FDMsg.EXTMISMATCH)
+        _print_bucket(journal, FDMsg.WARNING)
+    _print_bucket(journal, FDMsg.ERROR)
 
 
 def print_duplicates(duplicates: dict[str, list[Path]], mode: Mode) -> None:
-    """Print files that share the same MD5 checksum, grouped by hash."""
-    if mode.QUIET:
+    """Print files that share the same MD5 checksum, grouped under each hash as a tree."""
+    if mode.QUIET or not duplicates:
         return
-    if duplicates:
-        secho("\n----------- Duplicates -----------", bold=True)
-        secho("\nBased on their MD5 checksum, the following files are duplicates:")
-        for k in duplicates:  # noqa: PLC0206
-            secho(f"\nMD5 {k}: ", bold=True)
-            for path in duplicates[k]:
-                secho(f"- {path}")
-        secho("\n")
+    console.line()
+    console.print("Duplicates", style="bold")
+    console.line()
+    for md5, paths in duplicates.items():
+        tree = Tree(Text(f"MD5 {md5}"))
+        for path in paths:
+            tree.add(Text(f"{path}"), style="bold")
+        console.print(tree)
+        console.line()
+    console.line()
 
 
-def print_processing_errors(log_tables: LogTables) -> None:
+def print_processing_errors(journal: RunJournal) -> None:
     """Print files that encountered an error during conversion or filesystem operations."""
-    if log_tables.processing_errors:
-        secho("\n----------- Processing errors -----------", bold=True)
-        for err in log_tables.processing_errors:
-            secho(f"\n{_format_bite_size(err[1].filesize): >10}    {err[1].filename}", bold=True)
-            _print_logs([err[0]])
+    if not journal.processing_errors:
+        return
+    console.line()
+    for msg, sfinfo, _ in journal.processing_errors:
+        _print_file_header(sfinfo.filename, sfinfo.filesize, "processing error")
+        _print_logs([msg])
+    console.line()
+
+
+def _print_file_header(filename: Path, filesize: int, s: FDMsg | str) -> None:
+    """Print a file's name (in the section color) with its size dimmed alongside."""
+    style = "red" if s in [FDMsg.ERROR, "processing error", "siegfried error"] else "yellow"
+    console.print(
+        Text.assemble(
+            (f"[{s}] ", f"bold {style}"), (f"{filename}", "bold"), (f"  ({_format_bite_size(filesize)})", "dim")
+        ),
+        soft_wrap=True,
+    )
 
 
 def _print_logs(logs: list[LogMsg]) -> None:
-    """Print a list of LogMsg entries as single-line timestamped entries."""
+    """Print LogMsg entries indented under a file: dimmed short time + source, then the message."""
     for log in logs:
-        secho(f"{log.name}:    {log.msg.replace('\n', ' ')}")
+        stamp = log.timestamp.strftime("%H:%M:%S") if log.timestamp else "--:--:--"
+        line = Text()
+        line.append(f"  {stamp}  {log.name}  ", style="dim")
+        line.append(log.msg.replace("\n", " "))
+        console.print(line, soft_wrap=True)
+
+
+def print_policy_test(puid: str, result: ConversionResult, workdir: Path) -> None:
+    """Print one policy test: the puid, then the command (green) on success, or the reason + logs (red) on failure."""
+    console.print(Text(puid, style="bold yellow"), soft_wrap=True)
+    if result.converted:
+        console.print(Text(result.cmd, style="green"), soft_wrap=True)
+    else:
+        console.print(Text(result.error.msg if result.error else "conversion failed", style="bold red"), soft_wrap=True)
+        console.print(Text(result.cmd, style="dim"), soft_wrap=True)
+        if result.bin_log:
+            console.print(Text(f"{result.bin_log.name}: {result.bin_log.msg}", style="dim"), soft_wrap=True)
+    console.print(Text(f"file (if any) in {workdir}", style="dim"), soft_wrap=True)
 
 
 def print_msg(msg: str, quiet: bool) -> None:
@@ -116,13 +156,15 @@ def print_msg(msg: str, quiet: bool) -> None:
         secho(msg)
 
 
+def print_error(msg: str) -> None:
+    secho(msg, fg=colors.RED)
+
+
 def _format_bite_size(bytes_size: int) -> str:
-    """Convert a byte count to a human-readable MB / GB / TB string."""
-    tmp = bytes_size / (1024**2)
-    if math.ceil(tmp) > 1000:
-        tmp = tmp / 1024
-        if math.ceil(tmp) > 1000:
-            tmp = tmp / 1024
-            return f"{round(tmp, 3)} TB"
-        return f"{round(tmp, 3)} GB"
-    return f"{round(tmp, 3)} MB"
+    """Convert a byte count to a human-readable string (B / KB / MB / GB / TB)."""
+    size = float(bytes_size)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024:
+            return f"{int(size)} {unit}" if unit == "B" else f"{round(size, 2)} {unit}"
+        size /= 1024
+    return f"{round(size, 2)} TB"

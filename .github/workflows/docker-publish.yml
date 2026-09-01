@@ -7,7 +7,7 @@ on:
     paths:
       - 'fileidentification/**'
       - 'identify.py'
-      - 'Dockerfile'
+      - 'Dockerfile.galaxy'
       - 'pyproject.toml'
       - 'uv.lock'
   workflow_dispatch:
@@ -34,6 +34,7 @@ jobs:
         run: |
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
+            -f Dockerfile.galaxy \
             -t daschswiss/fileidentification-galaxy:latest \
             -t daschswiss/fileidentification-galaxy:${{ steps.version.outputs.tool_version }} \
             --push \

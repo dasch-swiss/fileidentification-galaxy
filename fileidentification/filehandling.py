@@ -1,43 +1,40 @@
 import csv
 import json
-import os
 import sys
 import threading
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import nullcontext
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pygfried
-from rich.progress import Progress, SpinnerColumn, TextColumn
-from typer import colors, secho
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 from fileidentification.definitions.models import (
     BasicAnalytics,
-    FilePaths,
-    LogMsg,
     LogOutput,
-    LogTables,
     Mode,
-    Policies,
-    PoliciesFile,
     PolicyParams,
+    RunJournal,
     SfInfo,
     sfinfo2csv,
 )
-from fileidentification.definitions.settings import CSVFIELDS, DEFAULTPOLICIES, FMT2EXT, MAX_WORKERS, Bin
+from fileidentification.definitions.settings import CSVFIELDS, MAX_WORKERS, PYG_WORKERS
 from fileidentification.tasks.console_output import (
     print_diagnostic,
     print_duplicates,
+    print_error,
     print_fmts,
     print_msg,
+    print_policy_test,
     print_processing_errors,
     print_siegfried_errors,
 )
 from fileidentification.tasks.conversion import convert_file
 from fileidentification.tasks.inspection import assert_file_integrity, inspect_file
-from fileidentification.tasks.os_tasks import move_tmp, set_filepaths
-from fileidentification.tasks.policies import apply_policy
+from fileidentification.tasks.os_tasks import move_tmp
+from fileidentification.tasks.policies import PolicyError, apply_policy, resolve_policies
+from fileidentification.workspace import Workspace
 
 
 class FileHandler:
@@ -46,141 +43,66 @@ class FileHandler:
     def __init__(self) -> None:
         self.mode: Mode = Mode()
         self.policies: dict[str, PolicyParams] = {}
-        self.log_tables = LogTables()
+        self.journal = RunJournal()
         self.ba = BasicAnalytics()
         self.stack: list[SfInfo] = []
-        self.fp: FilePaths = FilePaths()
+        self.ws: Workspace = Workspace(Path(), Path())  # replaced in run() once root_folder / tmp are resolved
+        self.sipi_guard: bool = False  # DaSCH: verify images with sipi during inspection (set from the policies file)
         self._stack_lock = threading.Lock()
-        self._soffice_lock = threading.Semaphore(1)
 
-    def _load_sfinfos(self, root_folder: Path) -> None:
+    def _build_stack(self, root_folder: Path) -> None:
         """
-        Add sfinfos to stack.
-        Checks whether a log json at default location exists. if so, it adds the sfinfos to the stack from there,
-        otherwhise it scans the root_folder with pygfried and adds its output as sfinfos to the stack
+        Populate self.stack: reload from an existing _log.json if present, else scan root_folder with pygfried.
+        Takes the original root_folder (ws.root_folder is the parent for a single-file target)
         """
-        initial = True
-        # if there is a log, try to read from there
-        if self.fp.LOGJSON.is_file():
-            initial = False
-            self.stack.extend([SfInfo(**metadata) for metadata in json.loads(self.fp.LOGJSON.read_text())["files"]])
+        # if there is a log, try to read from there (through the same LogOutput model write_logs writes)
+        if self.ws.logjson.is_file():
+            self.stack.extend(LogOutput(**json.loads(self.ws.logjson.read_text())).files or [])
 
-        # else scan the root_folder with pygfried
-        if not self.stack:
+        # scan the root_folder with pygfried only when nothing was reloaded; those files then need relativizing
+        initial = not self.stack
+        if initial:
             with Progress(
                 SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True
             ) as prog:
                 prog.add_task(description="Analysing files with pygfried ...", total=None)
-                self.stack.extend(
-                    [
-                        SfInfo(**pygfried.identify(f"{f}", detailed=True)["files"][0])  # type: ignore[arg-type]
-                        for f in root_folder.glob("**/*")
-                        if f.is_file()
-                    ]
-                )
                 if root_folder.is_file():
-                    self.stack.append(SfInfo(**pygfried.identify(f"{root_folder}", detailed=True)["files"][0]))  # type: ignore[arg-type]
+                    scanned = pygfried.identify(f"{root_folder}", detailed=True)["files"]
+                else:
+                    scanned = pygfried.identify_dir(f"{root_folder}", workers=PYG_WORKERS)["files"]
+                self.stack.extend(SfInfo(**sfi) for sfi in scanned)  # type: ignore[arg-type]
 
-        # append path values run basic analytics
+        # relativize freshly scanned filenames (portable form), run basic analytics
         for sfinfo in self.stack:
-            if not sfinfo.status.removed:
-                sfinfo.set_processing_paths(root_folder, self.fp.TMP_DIR, initial=initial)
-            if not (sfinfo.status.removed or sfinfo.dest):
+            if initial:
+                sfinfo.filename = self.ws.relativize(sfinfo.filename)
+            if sfinfo.is_active:
                 self.ba.append(sfinfo)
 
         print_siegfried_errors(ba=self.ba)
         print_duplicates(duplicates=self.ba.duplicates, mode=self.mode)
 
     # policies stuff
-    def _load_policies(self, policies_path: Path) -> Policies:
-        """Load and validate an existing policies.json"""
-        if not policies_path.is_file():
-            secho(f"{policies_path} not found", fg=colors.RED)
-            self.write_logs()
-            sys.exit(1)
+    def _resolve_policies(self, policies_path: Path | None = None, blank: bool = False, extend: bool = False) -> None:
+        """Set self.policies for the run via the policy-resolution module. write log (state) on policy error"""
         try:
-            file: PoliciesFile = PoliciesFile(**json.loads(policies_path.read_text()))
-        except ValueError as e:
-            secho(e, fg=colors.RED)
+            resolution = resolve_policies(
+                self.ba.puid_unique,
+                self.ws.poljson,
+                self.mode,
+                policies_path=policies_path,
+                blank=blank,
+                extend=extend,
+                emit=lambda msg: print_msg(msg, self.mode.QUIET),
+            )
+        except PolicyError as e:
+            print_error(str(e))
             self.write_logs()
             sys.exit(1)
 
-        self.policies = file.policies
-        return file.policies
-
-    def _gen_policies(self, outpath: Path, blank: bool = False, extend: bool = False) -> None:
-        """
-        Generate a policies.json with the default values of the encountered fileformats
-        :param blank if set to True, it generates a blank policies.json
-        :param extend if true, it expands the loaded policies with filetypes found in root_folder that are not in the
-        loaded policies and writes out an updated policies.json
-        """
-
-        jsonfile = PoliciesFile(name=outpath)
-        jsonfile.comment = "autogenerated"
-
-        # blank caveat
-        if blank:
-            jsonfile.comment += " blank policies"
-            for puid in self.ba.puid_unique:
-                jsonfile.policies.update(
-                    {puid: PolicyParams(format_name=FMT2EXT[puid]["name"], remove_original=self.mode.REMOVEORIGINAL)}
-                )
-            # write out policies with name of the folder, return policies
-            jsonfile.name.write_text(jsonfile.model_dump_json(indent=4, exclude_none=True))
-            self.policies = jsonfile.policies
-            return
-
-        # default values
-        default_policies = self._load_policies(DEFAULTPOLICIES)
-        jsonfile.comment += f" using default policies {DEFAULTPOLICIES}"
-        jsonfile.comment += " in strict mode" if self.mode.STRICT else ""
-        jsonfile.comment += f" updating from {outpath}" if extend else ""
-        self.ba.blank = []
-        for puid in self.ba.puid_unique:
-            if puid in default_policies:
-                jsonfile.policies.update({puid: default_policies[puid]})
-            # if there are no default values of this filetype and not run in strict mode
-            if not self.mode.STRICT and puid not in default_policies:
-                jsonfile.policies.update({puid: PolicyParams(format_name=FMT2EXT[puid]["name"])})
-                self.ba.blank.append(puid)
-            # if it is run in extend mode, add the existing policy if there is any
-            if extend and puid in self.policies:
-                jsonfile.policies.update({puid: self.policies[puid]})
-                if puid in self.ba.blank:
-                    self.ba.blank.remove(puid)
-            # set remove original
-            if puid in jsonfile.policies and self.mode.REMOVEORIGINAL:
-                jsonfile.policies[puid].remove_original = self.mode.REMOVEORIGINAL
-
-        # write out the policies with name of the folder
-        self.policies = jsonfile.policies
-        jsonfile.name.write_text(jsonfile.model_dump_json(indent=4, exclude_none=True))
-
-    def _manage_policies(self, policies_path: Path | None = None, blank: bool = False, extend: bool = False) -> None:
-        """
-        Set the policies according to the parameters passed. either default policies, external passed policies or
-        blank.
-        """
-        # default policies found and no external policies are passed
-        if not policies_path and self.fp.POLJSON.is_file():
-            # set default location
-            policies_path = self.fp.POLJSON
-        # no default policies found or the blank option is given:
-        # fallback: generate the policies with optional flag blank
-        if not policies_path or blank:
-            policies_path = self.fp.POLJSON
-            print_msg("Generating policies", self.mode.QUIET)
-            self._gen_policies(policies_path, blank=blank)
-        # load the external passed policies with option -p or default location
-        else:
-            self._load_policies(policies_path)
-
-        # expand a passed policies with the filetypes found in root_folder that are not yet in the policies
-        if extend and policies_path:
-            print_msg(f"Updating the filetypes in policies {self.fp.POLJSON}", self.mode.QUIET)
-            self._gen_policies(self.fp.POLJSON, extend=extend)
-
+        self.policies = resolution.policies
+        self.ba.blank = resolution.blank
+        self.sipi_guard = resolution.sipi_guard
         print_fmts(list(self.ba.puid_unique), self.ba, self.policies, self.mode)
 
     def _test_policies(self, puid: str | None = None) -> None:
@@ -193,78 +115,79 @@ class FileHandler:
 
         if not puids:
             print_msg("No files found that should be converted with given policies", self.mode.QUIET)
-        else:
-            print_msg("\n --- Testing policies with a sample from the directory ---", self.mode.QUIET)
+            return
 
-            for puid in puids:  # noqa: PLR1704
-                # we want the smallest file first for running the test
-                sample = self.ba.smallest_file(puid)
-                secho(f"\n{puid}", fg=colors.YELLOW)
-                t_sfinfo, cmd = convert_file(sample, self.policies)
-                if t_sfinfo:
-                    secho(f"{cmd}", fg=colors.GREEN, bold=True)
-                    secho(f"You find the file with the log in {t_sfinfo.filename.parent}")
+        print_msg("Testing policies ...", self.mode.QUIET)
+        for puid in puids:  # noqa: PLR1704
+            # test on a copy: convert_file mutates the sfinfo (logs, status.pending), and this is a
+            # diagnostic run that must not pollute the real stack object persisted to _log.json
+            sample = self.ba.smallest_file(puid).model_copy(deep=True)
+            result = convert_file(sample, self.policies, self.ws)
+            print_policy_test(puid, result, self.ws.working_dir(sample.filename))
 
-    def inspect(self) -> None:
-        """
-        Probe all active files and write a dated report JSON without modifying any files.
-        Deletes the policies file so the report is not conflated with a processing run.
-        """
-        self.fp.LOGJSON = self.fp.TMP_DIR / f"{datetime.now(UTC).strftime('%y%m%d')}_report.json"
-        self.fp.POLJSON.unlink(missing_ok=True)
-        active = [s for s in self.stack if not (s.status.removed or s.dest)]
+    def _run_parallel(self, items: list[SfInfo], description: str, work: Callable[[SfInfo], object]) -> None:
+        """Run `work` over `items` on the thread pool, Exceptions raised by `work` propagate via future.result()"""
         with Progress(
-            SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True, disable=True
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(complete_style="green", finished_style="green"),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            transient=True,
         ) as prog:
-            prog.add_task(description="Probing the files ...", total=None)
+            task = prog.add_task(description=description, total=len(items))
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                list(
-                    executor.map(
-                        lambda sfinfo: inspect_file(sfinfo, self.policies, self.log_tables, self.mode.VERBOSE),
-                        active,
-                    )
-                )
+                for future in as_completed([executor.submit(work, item) for item in items]):
+                    future.result()
+                    prog.advance(task)
 
-        print_diagnostic(log_tables=self.log_tables, mode=self.mode)
+    def inspect(self, to_csv: bool = False) -> None:
+        """Probe all active files and write a dated report JSON without modifying the source files."""
+        self.ws.poljson.unlink(missing_ok=True)
+        self.write_logs()  # persist the bare inventory so a rerun skips the pygfried scan
+        active = [s for s in self.stack if s.is_active]
+        self._run_parallel(
+            active,
+            "Probing the files ...",
+            lambda sfinfo: inspect_file(
+                sfinfo, self.policies, self.ws, self.journal, self.mode.VERBOSE, self.sipi_guard
+            ),
+        )
+
+        print_diagnostic(journal=self.journal, mode=self.mode)
+        self.write_logs(to_csv=to_csv, target=self.ws.report_json(datetime.now(UTC).strftime("%y%m%d")))
 
     def assert_integrity(self) -> None:
-        """Probe all active files: remove corrupt ones and rename files with extension mismatches."""
-        active = [s for s in self.stack if not (s.status.removed or s.dest)]
-        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as prog:
-            prog.add_task(description="Probing the files ...", total=None)
-            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                list(
-                    executor.map(
-                        lambda sfinfo: assert_file_integrity(sfinfo, self.policies, self.log_tables, self.mode.VERBOSE),
-                        active,
-                    )
-                )
+        """Probe active, not-yet-probed files: remove corrupt ones and rename files with extension mismatches."""
+        active = [s for s in self.stack if s.is_active and not s.status.probed]
+        self._run_parallel(
+            active,
+            "Probing the files ...",
+            lambda sfinfo: assert_file_integrity(
+                sfinfo, self.policies, self.ws, self.journal, self.mode.VERBOSE, self.sipi_guard
+            ),
+        )
 
-        print_diagnostic(log_tables=self.log_tables, mode=self.mode)
+        print_diagnostic(journal=self.journal, mode=self.mode)
 
-    def _silently_reencode(self, root_folder: Path) -> None:
+    def _silently_reencode(self) -> None:
         """
-        Silently convert and clean up files that were flagged for re-encoding during integrity check
-        (e.g. non-intra slices in IDR NAL units) without producing console output.
+        Silently convert and clean up files that were flagged for re-encoding during integrity check.
         Called when -i is used without -a.
         """
         self.mode.QUIET = True
         self.mode.REMOVEORIGINAL = True
         self.convert()
-        self.remove_tmp(root_folder)
+        self.remove_tmp()
 
     def apply_policies(self) -> None:
-        """Evaluate the policy for every active file and mark those that need conversion as pending."""
-        active = [s for s in self.stack if not (s.status.removed or s.dest)]
-        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as prog:
-            prog.add_task(description="Applying policies ...", total=None)
-            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                list(
-                    executor.map(
-                        lambda sfinfo: apply_policy(sfinfo, self.policies, self.log_tables, self.mode.STRICT),
-                        active,
-                    )
-                )
+        """Evaluate the policy for active, not-yet-applied files and mark those that need conversion as pending."""
+        active = [s for s in self.stack if s.is_active and not s.status.applied]
+        self._run_parallel(
+            active,
+            "Applying policies ...",
+            lambda sfinfo: apply_policy(sfinfo, self.policies, self.ws, self.journal, self.mode.STRICT),
+        )
 
     def convert(self) -> None:
         """Convert files whose metadata status pending is True"""
@@ -276,107 +199,101 @@ class FileHandler:
             return
 
         def _convert_one(sfinfo: SfInfo) -> None:
-            is_soffice = self.policies[sfinfo.processed_as].bin == Bin.SOFFICE  # type: ignore[index]
-            ctx = self._soffice_lock if is_soffice else nullcontext()
-            with ctx:
-                conv_sfinfo, cmd = convert_file(sfinfo, self.policies)
-            if conv_sfinfo:
-                msg = f"converted -> {sfinfo.tdir.stem}/{conv_sfinfo.filename.parent.name}/{conv_sfinfo.filename.name}"
-                sfinfo.processing_logs.append(LogMsg(name="filehandler", msg=msg))
-                conv_sfinfo.root_folder = sfinfo.root_folder
+            res = convert_file(sfinfo, self.policies, self.ws)
+            if res.converted:
                 with self._stack_lock:
-                    self.stack.append(conv_sfinfo)
-            else:
-                lmsg = sfinfo.processing_logs.pop()
-                lmsg.msg += f". cmd={cmd} "
-                self.log_tables.processing_error_add(lmsg, sfinfo)
+                    self.stack.append(res.converted)
+            elif res.error:
+                res.error.msg += f". cmd={res.cmd} "
+                # the bin's log (if any) goes in as a detail: recorded in the "errors" copy but not printed
+                self.journal.record_error(res.error, sfinfo, [res.bin_log] if res.bin_log else None)
 
-        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as prog:
-            prog.add_task(description="Converting ...", total=None)
-            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                list(executor.map(_convert_one, pending))
+        self._run_parallel(pending, "Converting ...", _convert_one)
 
-    def remove_tmp(self, root_folder: Path) -> None:
+    def remove_tmp(self) -> None:
         """Move converted files from the tmp dir to their destinations and clean up empty tmp folders."""
         # move converted files from the working dir to its destination
         with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as prog:
             prog.add_task(description="Moving files ...", total=None)
-            files_moved = move_tmp(self.stack, self.policies, self.log_tables, self.mode.REMOVEORIGINAL)
-
-        # remove empty folders in working dir
-        if self.fp.TMP_DIR.is_dir():
-            for path, _, _ in os.walk(self.fp.TMP_DIR, topdown=False):
-                if len(os.listdir(path)) == 0:  # noqa: PTH208
-                    Path(path).rmdir()
+            files_moved = move_tmp(self.stack, self.ws, self.policies, self.journal, self.mode.REMOVEORIGINAL)
         if files_moved:
-            print_msg(f"\nMoved the files from {self.fp.TMP_DIR.stem} to {root_folder.stem} ...", self.mode.QUIET)
+            print_msg(f"\nMoved converted files from {self.ws.tmp_dir} to {self.ws.root_folder} ...", self.mode.QUIET)
 
-    def write_logs(self, to_csv: bool = False) -> None:
-        """Write the run state to _log.json and optionally export a CSV alongside it."""
-        logoutput = LogOutput(files=self.stack, errors=self.log_tables.dump_errors(), duplicates=self.ba.duplicates)
-        self.fp.LOGJSON.write_text(logoutput.model_dump_json(indent=4, exclude_none=True))
+    def write_logs(self, to_csv: bool = False, target: Path | None = None) -> None:
+        """
+        Write the run state to `target` (default: _log.json) and optionally export a CSV alongside it.
+        inspect() passes a dated report path so its read-only output stays separate from a processing run.
+        """
+        dest = target or self.ws.logjson
+        print_processing_errors(journal=self.journal)
 
-        print_processing_errors(log_tables=self.log_tables)
+        logoutput = LogOutput(files=self.stack, errors=self.journal.error_records(), duplicates=self.ba.duplicates)
+        dest.write_text(logoutput.model_dump_json(indent=4, exclude_none=True))
 
         if to_csv:
-            with open(f"{self.fp.LOGJSON}.csv", "w") as f:  # noqa: PTH123
+            with open(f"{dest}.csv", "w") as f:  # noqa: PTH123
                 w = csv.DictWriter(f, CSVFIELDS)
                 w.writeheader()
-                [w.writerow(sfinfo2csv(el)) for el in self.stack]
+                w.writerows(sfinfo2csv(el) for el in self.stack)
 
     # default run, has a typer interface for the params in identify.py
-    def run(
+    def run(  # noqa: C901 flat task orchestration; complexity is from the flag branches, not nesting
         self,
         root_folder: Path | str,
-        assert_integrity: bool = True,
-        apply: bool = True,
-        remove_tmp: bool = True,
+        mode: Mode,
+        *,
+        assert_integrity: bool = False,
+        apply: bool = False,
+        remove_tmp: bool = False,
         convert: bool = False,
         policies_path: Path | None = None,
         blank: bool = False,
         extend: bool = False,
         test_puid: str | None = None,
         test_policies: bool = False,
-        remove_original: bool = False,
-        mode_strict: bool = False,
-        mode_verbose: bool = True,
-        mode_quiet: bool = True,
         to_csv: bool = False,
         tmp_dir: Path | None = None,
         inspect: bool = False,
     ) -> None:
         root_folder = Path(root_folder)
-        # set dirs / paths
-        set_filepaths(self.fp, root_folder, tmp_dir)
-        # set the mode
-        self.mode.REMOVEORIGINAL = remove_original
-        self.mode.VERBOSE = mode_verbose
-        self.mode.STRICT = mode_strict
-        self.mode.QUIET = mode_quiet
+        self.mode = mode
+        # resolve the run's paths (validates the root, normalizes a single-file target, creates the tmp dir)
+        try:
+            self.ws = Workspace.for_run(root_folder, tmp_dir)
+        except ValueError:
+            print_error("root folder not found")
+            sys.exit(1)
         # generate a list of SfInfo objects out of the target folder
-        self._load_sfinfos(root_folder)
-        # generate policies
-        self._manage_policies(policies_path, blank, extend)
-        # probing the files
-        if inspect:
-            self.inspect()
-        if assert_integrity:
-            self.assert_integrity()
-            if not apply:
-                # this triggers -qarx (to catch fixes with reencoding)
-                self._silently_reencode(root_folder)
-        # policies testing
-        if test_puid:
-            self._test_policies(puid=test_puid)
-        if test_policies:
-            self._test_policies()
-        # apply policies
-        if apply:
-            self.apply_policies()
-            self.convert()
-        if convert:
-            self.convert()
-        # remove tmp files
-        if remove_tmp:
-            self.remove_tmp(root_folder)
-        self.write_logs(to_csv=to_csv)
+        self._build_stack(root_folder)
+        # the stack is now complete; from here on, persist it on any failure so a restart
+        # reloads a full inventory (an incomplete _log.json would suppress a rescan).
+        try:
+            # generate policies
+            self._resolve_policies(policies_path, blank, extend)
+            # inspect is a terminal, read-only mode: write the dated report and stop before any file-altering step
+            if inspect:
+                self.inspect(to_csv=to_csv)
+                return
+            if assert_integrity:
+                self.assert_integrity()
+                if not apply:  # this triggers -qarx (to catch fixes with reencoding)
+                    self._silently_reencode()
+            # policies testing
+            if test_puid:
+                self._test_policies(puid=test_puid)
+            if test_policies:
+                self._test_policies()
+            # apply policies
+            if apply:
+                self.apply_policies()
+                self.convert()
+            if convert:
+                self.convert()
+            # remove tmp files
+            if remove_tmp:
+                self.remove_tmp()
+            self.write_logs(to_csv=to_csv)
+        except Exception:
+            if self.stack:
+                self.write_logs()
+            raise

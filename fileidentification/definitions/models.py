@@ -7,14 +7,15 @@ from typing import Any, Self
 
 from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
 
-from fileidentification.definitions.settings import Bin, FDMsg, PLMsg, PVErr
+from fileidentification.definitions.settings import Bin, FDMsg, LogLevel, PLMsg, PVErr
 
 
 class LogMsg(BaseModel):
-    """A single timestamped log entry attached to an SfInfo (media_info, warnings, processing_logs)."""
+    """A single timestamped log entry attached to an SfInfo (media_info, processing_logs)."""
 
     name: str
     msg: str
+    level: LogLevel = LogLevel.INFO
     timestamp: datetime | None = None
 
     def model_post_init(self, context: Any, /) -> None:
@@ -24,11 +25,20 @@ class LogMsg(BaseModel):
 
 
 class Status(BaseModel):
-    """status of the file: removed, pending for conversion or added"""
+    """
+    Processing state of a file.
+    removed: moved to _REMOVED (corrupt or replaced by a conversion).
+    pending: flagged for conversion but not yet converted.
+    added: it is a conversion output that was added to the stack.
+    probed: integrity has been probed.
+    applied: policies have been applied.
+    """
 
     removed: bool = False
     pending: bool = False
     added: bool = False
+    probed: bool = False
+    applied: bool = False
 
 
 # main metadata object where information is stored and added
@@ -36,7 +46,8 @@ class SfInfo(BaseModel):
     """file info object mapped from siegfried output, gets extended while processing."""
 
     # output from siegfried
-    filename: Path
+    filename: Path  # portable, relative to root_folder — except a converted file awaiting move (dest set),
+    # whose filename is its working-dir location relative to tmp_dir until move_tmp relocates it
     filesize: int
     modified: str
     errors: str
@@ -46,19 +57,13 @@ class SfInfo(BaseModel):
     status: Status = Field(default_factory=Status)
     processed_as: str | None = None
     media_info: list[LogMsg] = Field(default_factory=list[LogMsg])
-    warnings: list[LogMsg] = Field(default_factory=list[LogMsg])
     processing_logs: list[LogMsg] = Field(default_factory=list[LogMsg])
     # if converted
     derived_from: Self | None = None
-    dest: Path | None = None
-    # paths used during processing, they are not written out
-    path: Path = Field(default_factory=Path, exclude=True)
-    root_folder: Path = Field(default_factory=Path, exclude=True)
-    tdir: Path = Field(default_factory=Path, exclude=True)
+    dest: Path | None = None  # future home dir (relative to root_folder); set until move_tmp relocates the file
 
     def model_post_init(self, context: Any, /) -> None:
-        if not self.status:
-            self.status = Status()
+        """Derive the fields not provided by siegfried: processed_as, md5"""
         if not self.processed_as:
             self.processed_as = self._fetch_puid()
         if not self.md5:
@@ -76,68 +81,76 @@ class SfInfo(BaseModel):
                 fmts = re.findall(r"(fmt|x-fmt)/([\d]+)", self.matches[0]["warning"])
                 fmts_s: list[str] = [f"{el[0]}/{el[1]}" for el in fmts]
                 if fmts:
-                    self.processing_logs.append(LogMsg(name="filehandler", msg=PLMsg.FALLBACK))
+                    self.processing_logs.append(LogMsg(name="fidr", msg=PLMsg.FALLBACK))
                     return fmts_s[0]
                 return None
             puid: str = self.matches[0]["id"]
             return puid
         return None
 
-    def set_processing_paths(self, root_folder: Path, tdir: Path, initial: bool) -> None:
-        """
-        Set root_folder and tdir, and derive the absolute path for this file.
-        On the initial run (scanned by pygfried), filename is made relative to root_folder.
-        When loaded from an existing log (initial=False), filename is already relative.
-        """
-        if root_folder.is_file():
-            root_folder = root_folder.parent
-        self.root_folder = root_folder
-        self.tdir = tdir
-        if initial:
-            self.filename = self.filename.parent.relative_to(root_folder) / self.filename.name
-        if not self.dest:
-            self.path = self.root_folder / self.filename
+    @property
+    def is_active(self) -> bool:
+        return not (self.status.removed or self.dest)
 
 
 class LogOutput(BaseModel):
     """Top-level structure written to _log.json: all files, processing errors, and duplicates."""
 
-    duplicates: dict[str, list[Path]] | None
+    duplicates: dict[str, list[Path]] | None = None
     files: list[SfInfo] | None = None
     errors: list[SfInfo] | None = None
 
 
-class LogTables(BaseModel):
-    """table to store errors and warnings"""
+class RunJournal(BaseModel):
+    """
+    Run-wide record of what happened to each file, shared across worker threads.
+    Always mutate via `diagnose` / `record_error`, which hold the internal lock.
+    """
 
     diagnostics: dict[str, list[SfInfo]] = Field(default_factory=dict)
-    processing_errors: list[tuple[LogMsg, SfInfo]] = Field(default_factory=list)
+    processing_errors: list[tuple[LogMsg, SfInfo, list[LogMsg]]] = Field(default_factory=list)
     _lock: threading.Lock = PrivateAttr(default_factory=threading.Lock)
 
-    def diagnostics_add(self, sfinfo: SfInfo, fdgm: FDMsg) -> None:
-        """Thread-safely append sfinfo to the diagnostics bucket identified by the FDMsg name."""
+    def diagnose(self, sfinfo: SfInfo, severity: FDMsg, msg: LogMsg) -> None:
+        """
+        Record a diagnostic for the console report: set `msg`'s level from `severity`, append it to the SfInfo's
+        processing_logs, and bucket the SfInfo under `severity`. The report prints each bucketed file's full
+        processing_logs. Thread-safe.
+        """
+        msg.level = LogLevel.ERROR if severity == FDMsg.ERROR else LogLevel.WARNING
         with self._lock:
-            if fdgm.name not in self.diagnostics:
-                self.diagnostics[fdgm.name] = []
-            self.diagnostics[fdgm.name].append(sfinfo)
+            sfinfo.processing_logs.append(msg)
+            self.diagnostics.setdefault(severity.name, []).append(sfinfo)
 
-    def processing_error_add(self, msg: LogMsg, sfinfo: SfInfo) -> None:
-        """Thread-safely append a processing error."""
+    def record_error(self, msg: LogMsg, sfinfo: SfInfo, details: list[LogMsg] | None = None) -> None:
+        """
+        Thread-safely append a processing error (the summary is marked error-level).
+        details are extra LogMsgs (e.g. the converter's output) recorded only in the "errors" copy and not printed.
+        """
+        msg.level = LogLevel.ERROR
         with self._lock:
-            self.processing_errors.append((msg, sfinfo))
+            self.processing_errors.append((msg, sfinfo, details or []))
 
-    def dump_errors(self) -> list[SfInfo] | None:
-        """Flush processing_errors into their SfInfo.processing_logs and return the affected SfInfo objects."""
+    def error_records(self) -> list[SfInfo] | None:
+        """
+        Return a copy of each SfInfo that hit a processing error, with the summary LogMsg and any detail LogMsgs
+        appended to its processing_logs.
+        """
         if not self.processing_errors:
             return None
-        for el in self.processing_errors:
-            el[1].processing_logs.append(el[0])
-        result = [el[1] for el in self.processing_errors]
-        self.processing_errors.clear()
-        return result
+        return [
+            sfinfo.model_copy(update={"processing_logs": [*sfinfo.processing_logs, msg, *details]})
+            for msg, sfinfo, details in self.processing_errors
+        ]
 
 
 class BasicAnalytics(BaseModel):
+    """
+    Indexes the scanned files for analytics and policy generation:
+    by MD5 (to find duplicates) and by PUID (puid_unique, the distinct formats found in the folder).
+    siegfried_errors holds files siegfried could not read; blank tracks PUIDs generated without a default policy.
+    """
+
     filehashes: dict[str, list[Path]] = Field(default_factory=dict)
     puid_unique: dict[str, list[SfInfo]] = Field(default_factory=dict)
     siegfried_errors: list[SfInfo] = Field(default_factory=list)
@@ -146,12 +159,8 @@ class BasicAnalytics(BaseModel):
     def append(self, sfinfo: SfInfo) -> None:
         """Index sfinfo by PUID and MD5, and record it in siegfried_errors if siegfried reported a read error."""
         if sfinfo.processed_as:
-            if sfinfo.md5 not in self.filehashes:
-                self.filehashes[sfinfo.md5] = []
-            self.filehashes[sfinfo.md5].append(sfinfo.filename)
-            if sfinfo.processed_as not in self.puid_unique:
-                self.puid_unique[sfinfo.processed_as] = []
-            self.puid_unique[sfinfo.processed_as].append(sfinfo)
+            self.filehashes.setdefault(sfinfo.md5, []).append(sfinfo.filename)
+            self.puid_unique.setdefault(sfinfo.processed_as, []).append(sfinfo)
         if sfinfo.errors and sfinfo.errors != FDMsg.EMPTYSOURCE:
             self.siegfried_errors.append(sfinfo)
 
@@ -167,6 +176,13 @@ class BasicAnalytics(BaseModel):
 
 # models for policies
 class PolicyParams(BaseModel):
+    """
+    One policy entry, keyed by PUID in a policies.json. accepted=True keeps the format as-is; accepted=False must
+    convert, requiring bin (ffmpeg/magick/soffice), target_container and expected.
+    processing_args: extra converter args. expected: PUIDs the output is verified
+    against. remove_original: move the source to _REMOVED after a successful conversion.
+    """
+
     format_name: str = Field(default_factory=str)
     bin: str = Field(default="")
     accepted: bool = Field(default=True)
@@ -208,8 +224,11 @@ Policies = dict[str, PolicyParams]
 
 
 class PoliciesFile(BaseModel):
+    """On-disk structure of a policies.json: name, comment, the DaSCH sipi_guard flag, and the PUID->policy map."""
+
     name: Path = Field(default_factory=Path)
     comment: str = Field(default_factory=str)
+    sipi_guard: bool = Field(default=False)
     policies: Policies = Field(default_factory=Policies)
 
 
@@ -227,14 +246,6 @@ class Mode(BaseModel):
     VERBOSE: bool = False
     STRICT: bool = False
     QUIET: bool = False
-
-
-class FilePaths(BaseModel, validate_assignment=True):
-    """Resolved filesystem paths used throughout a FileHandler run."""
-
-    TMP_DIR: Path = Field(default_factory=Path)
-    POLJSON: Path = Field(default_factory=Path)
-    LOGJSON: Path = Field(default_factory=Path)
 
 
 def get_md5(path: str | Path) -> str:
@@ -265,10 +276,8 @@ def sfinfo2csv(sfinfo: SfInfo) -> dict[str, str | int]:
         res["processed_as"] = sfinfo.processed_as
     if sfinfo.media_info:
         res["media_info"] = sfinfo.media_info[0].msg
-    if sfinfo.warnings:
-        res["warnings"] = " ; ".join([el.msg for el in sfinfo.warnings])
     if sfinfo.processing_logs:
-        res["processing_logs"] = " ; ".join([el.msg for el in sfinfo.processing_logs])
+        res["processing_logs"] = " ; ".join([f"{el.level}: {el.msg}" for el in sfinfo.processing_logs])
     if sfinfo.derived_from:
         res["derived_from"] = f"{sfinfo.derived_from.filename}"
     return res

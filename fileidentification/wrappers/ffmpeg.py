@@ -6,8 +6,11 @@ from typing import Any
 
 def ffmpeg_collect_warnings(file: Path, verbose: bool) -> tuple[bool, str, str]:
     """
-    Check for errors with ffprobe -show_error or ffmpeg dropping frames.
-    Returns True if file is corrupt, stdout, technical metadata of the video
+    Probe the file with ffprobe (and, if verbose, decode it fully with ffmpeg to catch frame-level errors).
+    Returns a tuple (is_corrupt, log_text, specs):
+      is_corrupt: True if ffprobe reported an error;
+      log_text: the ffprobe/ffmpeg diagnostic output (paths stripped);
+      specs: the stream/codec metadata as a JSON string, or '' if none.
     """
 
     cmd = ["ffprobe", "-hide_banner", "-show_error", str(file)]
@@ -29,7 +32,8 @@ def ffmpeg_collect_warnings(file: Path, verbose: bool) -> tuple[bool, str, str]:
     return False, std_out, specs
 
 
-def ffmpeg_media_info(file: Path) -> dict[str, Any] | None:
+def ffmpeg_media_info(file: Path) -> list[dict[str, Any]] | None:
+    """Return the per-stream codec/technical metadata from ffprobe (one dict per stream), or None if ffprobe fails."""
     cmd: list[str] = [
         "ffprobe",
         str(file),
@@ -43,6 +47,6 @@ def ffmpeg_media_info(file: Path) -> dict[str, Any] | None:
     ]
     res = subprocess.run(cmd, check=False, capture_output=True)
     if res.returncode == 0:
-        streams: dict[str, Any] = json.loads(res.stdout)["streams"]
+        streams: list[dict[str, Any]] = json.loads(res.stdout)["streams"]
         return streams
     return None

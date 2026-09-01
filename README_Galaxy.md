@@ -35,20 +35,23 @@ Keep in mind:
 - The commands inside the `<command>` block of the XML file are executed in a dedicated user directory defined by Galaxy - 
   not in the `WORKDIR` specified in the Dockerfile.
 - Only the user directory is writable, all other dirs are read-only: the input dir, `/app`, ...
-- The Terminal output of the tool slightly differs across operating systems, e.g. regarding the order of files.
-  The e2e test will fail on MacOS, because the expected output doesn't exactly match the actual output.
-  You can run the e2e test on MacOS anyways, to get a rough idea about what's going on.
+- The test asserts on the structure of the JSON report, not on byte-for-byte console text, so it passes
+  the same way on macOS and on the Linux CI runner.
 
 
 ### Rebuilding the Docker Image (just for local testing)
 
-If you modify the Python code or the Dockerfile, and open a PR, the automated tests will rebuild the Docker image.
-But if you want your local planemo to be aware of your changes, make sure to rebuild the image first:
+If you modify the Python code or `Dockerfile.galaxy`, and open a PR, the automated tests will rebuild the Docker
+image. But if you want your local planemo to be aware of your changes, make sure to rebuild the image first:
 
 ```bash
 TOOL_VERSION=xyz    # copy from macros.xml
-docker build -t daschswiss/fileidentification-galaxy:${TOOL_VERSION} .
+docker build -f Dockerfile.galaxy -t daschswiss/fileidentification-galaxy:${TOOL_VERSION} .
 ```
+
+Note: `Dockerfile.galaxy` is a separate, Galaxy-only image, kept deliberately slim (`--inspect` never
+invokes soffice or sipi). The plain `Dockerfile` at the repo root is upstream's and stays untouched, so
+syncing the fork never conflicts on it.
 
 
 ## Tool Shed
@@ -96,7 +99,7 @@ copy over the changed files into this repo.
 Update the versions in `macros.xml`:
 
 - If only the Galaxy wrapper stuff has changed: bump `@VERSION_SUFFIX@`
-- If the Python code, Python dependencies, or Dockerfile have changed:
+- If the Python code, Python dependencies, or `Dockerfile.galaxy` have changed:
   bump `@TOOL_VERSION@`, according to the version from `pyproject.toml`.
   This is enforced by a GitHub actions check,
   because the images on Docker Hub are versioned according to `@TOOL_VERSION@`.
@@ -121,7 +124,7 @@ and every future `git merge upstream/main` re-surfaces already-resolved conflict
 A real merge commit keeps upstream's commits as ancestors, so the fork stays "0 behind".
 (Normal feature PRs in this fork can still be squash-merged; only the sync PR needs a merge commit.)
 
-If the Python code, Python dependencies, or Dockerfile have changed,
+If the Python code, Python dependencies, or `Dockerfile.galaxy` have changed,
 this will automatically publish the newest Docker image to
 [Docker Hub](https://hub.docker.com/r/daschswiss/fileidentification-galaxy).
 
