@@ -1,4 +1,4 @@
-categories:  # see https://toolshed.g2.bx.psu.edu/repositories_by_category 
+categories:  # see https://toolshed.g2.bx.psu.edu/repository/browse_categories
 - Digital Humanities
 description: Tool to check multimedia files if they are corrupt or duplicated
 long_description: |
